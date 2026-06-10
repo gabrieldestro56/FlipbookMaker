@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Flipbook Maker</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <span class="logo">▦</span>
+      <div>
+        <h1>Flipbook Maker</h1>
+        <p>Turn any video into a game-ready looping sprite sheet</p>
+      </div>
+    </div>
+    <div class="status" id="status">Load a video to begin</div>
+  </header>
+
+  <main>
+    <!-- Left: controls -->
+    <section class="panel controls">
+      <h2>1 · Source</h2>
+      <label class="filebtn">
+        <input type="file" id="fileInput" accept="video/*" hidden />
+        <span>Choose video file…</span>
+      </label>
+      <div class="orline"><span>or load by path</span></div>
+      <div class="row">
+        <input type="text" id="pathInput"
+               placeholder="C:\path\to\video.mp4" />
+        <button id="loadPathBtn" class="ghost">Load</button>
+      </div>
+      <div class="meta" id="videoMeta"></div>
+
+      <h2>2 · Grid</h2>
+      <div class="preset-row" id="presets">
+        <button data-grid="8">8×8</button>
+        <button data-grid="10" class="active">10×10</button>
+        <button data-grid="12">12×12</button>
+        <button data-grid="16">16×16</button>
+      </div>
+      <div class="grid2">
+        <label>Columns
+          <input type="number" id="cols" value="10" min="1" max="32" />
+        </label>
+        <label>Rows
+          <input type="number" id="rows" value="10" min="1" max="32" />
+        </label>
+      </div>
+      <label class="check">
+        <input type="checkbox" id="square" checked />
+        Keep square (cols = rows)
+      </label>
+
+      <label>Cell resolution
+        <select id="cell">
+          <option value="64">64 px</option>
+          <option value="128">128 px</option>
+          <option value="256" selected>256 px</option>
+          <option value="512">512 px</option>
+        </select>
+      </label>
+      <div class="hint" id="sheetSize">Sheet: 2560 × 2560 px · 100 frames</div>
+
+      <h2>3 · Loop</h2>
+      <label class="check">
+        <input type="checkbox" id="loop" checked />
+        Seamless loop (cross-blend the seam)
+      </label>
+      <label>Blend frames <span class="val" id="blendVal">4</span>
+        <input type="range" id="blend" min="0" max="20" value="4" />
+      </label>
+      <label>Blend mode
+        <select id="mode">
+          <option value="linear" selected>Linear cross-fade (fast)</option>
+          <option value="optical">Optical-flow morph (sharper)</option>
+        </select>
+      </label>
+
+      <h2>4 · Export</h2>
+      <label class="check">
+        <input type="checkbox" id="alpha" />
+        Alpha from luminance
+      </label>
+      <div class="hint subtle">Cuts out fire / smoke / explosions shot on black.</div>
+      <label class="check">
+        <input type="checkbox" id="premultiply" disabled />
+        Premultiply alpha
+      </label>
+      <div class="grid2">
+        <label>Format
+          <select id="fmt">
+            <option value="png" selected>PNG (recommended)</option>
+            <option value="tga">TGA</option>
+            <option value="webp">WebP</option>
+            <option value="tiff">TIFF</option>
+            <option value="exr">EXR (HDR)</option>
+            <option value="jpg">JPG (no alpha)</option>
+          </select>
+        </label>
+        <label>Power-of-two
+          <select id="pot">
+            <option value="0" selected>Off (native)</option>
+            <option value="512">512</option>
+            <option value="1024">1024</option>
+            <option value="2048">2048</option>
+            <option value="4096">4096</option>
+          </select>
+        </label>
+      </div>
+
+      <button id="generateBtn" class="primary" disabled>Generate flipbook</button>
+      <a id="downloadBtn" class="primary outline hidden" download>Download</a>
+      <a id="metaBtn" class="metalink hidden" download>＋ metadata (.json)</a>
+    </section>
+
+    <!-- Middle: source video -->
+    <section class="panel">
+      <h2>Source video</h2>
+      <div class="stage">
+        <video id="video" controls loop muted playsinline></video>
+        <div class="placeholder" id="videoPlaceholder">No video loaded</div>
+      </div>
+    </section>
+
+    <!-- Right: playback + sheet -->
+    <section class="panel">
+      <h2>Flipbook playback</h2>
+      <div class="stage">
+        <canvas id="preview" width="512" height="512"></canvas>
+        <div class="placeholder" id="previewPlaceholder">Generate to preview</div>
+      </div>
+      <div class="playbar">
+        <button id="playBtn" class="ghost" disabled>⏸ Pause</button>
+        <label class="fps">FPS <span class="val" id="fpsVal">24</span>
+          <input type="range" id="fps" min="1" max="60" value="24" />
+        </label>
+      </div>
+      <h2>Sprite sheet</h2>
+      <div class="sheetwrap">
+        <img id="sheet" alt="generated flipbook sheet" />
+        <div class="placeholder" id="sheetPlaceholder">No sheet yet</div>
+      </div>
+    </section>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>
