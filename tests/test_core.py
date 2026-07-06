@@ -1,4 +1,6 @@
 """Unit tests for core.py — every public and private helper is exercised."""
+import os
+
 import numpy as np
 import pytest
 
@@ -202,3 +204,77 @@ def test_end_to_end_from_real_video(video_path):
     res = core.make_flipbook(video_path, cols=4, rows=4, cell=32,
                              loop=True, blend_frames=2)
     assert res.sheet_bgr.shape == (128, 128, 3)
+
+
+# ------------------------------------------------------- image sequences
+def test_natural_key_orders_numeric():
+    names = ["Muzzle_10.png", "Muzzle_2.png", "Muzzle_0.png", "Muzzle_1.png"]
+    ordered = sorted(names, key=core._natural_key)
+    assert ordered == ["Muzzle_0.png", "Muzzle_1.png", "Muzzle_2.png", "Muzzle_10.png"]
+
+
+def test_list_image_files_sorted(image_dir):
+    files = core.list_image_files(image_dir)
+    assert len(files) == 8
+    assert os.path.basename(files[0]) == "Frame_0.png"
+    assert os.path.basename(files[-1]) == "Frame_7.png"
+
+
+def test_list_image_files_empty_raises(tmp_path):
+    with pytest.raises(ValueError):
+        core.list_image_files(str(tmp_path))
+
+
+def test_probe_images(image_dir):
+    info = core.probe_images(image_dir)
+    assert info.frame_count == 8
+    assert info.width > 0 and info.height > 0
+
+
+def test_suggest_grid():
+    assert core.suggest_grid(8) == (3, 3)
+    assert core.suggest_grid(16) == (4, 4)
+    assert core.suggest_grid(1) == (1, 1)
+
+
+def test_decode_square_images_keeps_alpha(image_dir):
+    files = core.list_image_files(image_dir)
+    frames = core.decode_square_images(files, cell=48)
+    assert len(frames) == 8
+    assert all(f.shape == (48, 48, 4) for f in frames)  # alpha preserved
+
+
+def test_decode_square_images_no_alpha(image_dir_noalpha):
+    files = core.list_image_files(image_dir_noalpha)
+    frames = core.decode_square_images(files, cell=32)
+    assert all(f.shape == (32, 32, 3) for f in frames)
+
+
+def test_make_flipbook_images_underfilled_leaves_transparent(image_dir):
+    files = core.list_image_files(image_dir)
+    res = core.make_flipbook_images(files, cols=3, rows=3, cell=16)  # 9 cells, 8 imgs
+    assert res.sheet_bgr.shape == (48, 48, 4)
+    assert res.frame_count == 8            # only real frames play back
+    # last cell (index 8) was never filled -> fully transparent
+    assert res.sheet_bgr[32:48, 32:48, 3].max() == 0
+
+
+def test_make_flipbook_images_exact_fit(image_dir):
+    files = core.list_image_files(image_dir)
+    res = core.make_flipbook_images(files, cols=4, rows=2, cell=16)  # 8 cells, 8 imgs
+    assert res.frame_count == 8
+    assert res.sheet_bgr[:, :, 3].min() >= 0
+
+
+def test_make_flipbook_images_oversubscribed_samples(image_dir):
+    files = core.list_image_files(image_dir)
+    res = core.make_flipbook_images(files, cols=2, rows=2, cell=16)  # 4 cells, 8 imgs
+    assert res.frame_count == 4
+
+
+def test_make_flipbook_images_from_frames_and_loop():
+    frames = [np.full((16, 16, 4), i, np.uint8) for i in range(4)]
+    res = core.make_flipbook_images(None, cols=2, rows=2, cell=16,
+                                    loop=True, blend_frames=1, frames=frames)
+    assert res.sheet_bgr.shape == (32, 32, 4)
+    assert res.frame_count == 4

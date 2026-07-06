@@ -12,33 +12,51 @@
       <span class="logo">▦</span>
       <div>
         <h1>Flipbook Maker</h1>
-        <p>Turn any video into a game-ready looping sprite sheet</p>
+        <p>Turn a video <em>or</em> an image sequence into a game-ready sprite sheet</p>
       </div>
     </div>
-    <div class="status" id="status">Load a video to begin</div>
+    <div class="status" id="status">Load a source to begin</div>
   </header>
 
   <main>
     <!-- Left: controls -->
     <section class="panel controls">
       <h2>1 · Source</h2>
-      <label class="filebtn">
-        <input type="file" id="fileInput" accept="video/*" hidden />
-        <span>Choose video file…</span>
-      </label>
-      <div class="orline"><span>or load by path</span></div>
-      <div class="row">
-        <input type="text" id="pathInput"
-               placeholder="C:\path\to\video.mp4" />
-        <button id="loadPathBtn" class="ghost">Load</button>
+
+      <div class="seg" id="sourceMode">
+        <button data-mode="video" class="active">Video</button>
+        <button data-mode="images">Image sequence</button>
       </div>
+
+      <!-- Video source -->
+      <div id="videoSource">
+        <label class="filebtn">
+          <input type="file" id="fileInput" accept="video/*" hidden />
+          <span>Choose video file…</span>
+        </label>
+        <div class="orline"><span>or load by path</span></div>
+        <div class="row">
+          <input type="text" id="pathInput" placeholder="C:\path\to\video.mp4" />
+          <button id="loadPathBtn" class="ghost">Load</button>
+        </div>
+      </div>
+
+      <!-- Image sequence source -->
+      <div id="imageSource" class="hidden">
+        <label class="tip">Point to a folder of numbered images (0, 1, 2 …).</label>
+        <div class="row">
+          <input type="text" id="folderInput" placeholder="C:\path\to\frames" />
+          <button id="loadFolderBtn" class="ghost">Load</button>
+        </div>
+      </div>
+
       <div class="meta" id="videoMeta"></div>
 
       <h2>2 · Grid</h2>
       <div class="preset-row" id="presets">
+        <button data-grid="4">4×4</button>
         <button data-grid="8">8×8</button>
         <button data-grid="10" class="active">10×10</button>
-        <button data-grid="12">12×12</button>
         <button data-grid="16">16×16</button>
       </div>
       <div class="grid2">
@@ -60,6 +78,7 @@
           <option value="128">128 px</option>
           <option value="256" selected>256 px</option>
           <option value="512">512 px</option>
+          <option value="1024">1024 px</option>
         </select>
       </label>
       <div class="hint" id="sheetSize">Sheet: 2560 × 2560 px · 100 frames</div>
@@ -82,9 +101,9 @@
       <h2>4 · Export</h2>
       <label class="check">
         <input type="checkbox" id="alpha" />
-        Alpha from luminance
+        <span id="alphaLabel">Alpha from luminance</span>
       </label>
-      <div class="hint subtle">Cuts out fire / smoke / explosions shot on black.</div>
+      <div class="hint subtle" id="alphaHint">Cuts out fire / smoke / explosions shot on black.</div>
       <label class="check">
         <input type="checkbox" id="premultiply" disabled />
         Premultiply alpha
@@ -116,12 +135,13 @@
       <a id="metaBtn" class="metalink hidden" download>＋ metadata (.json)</a>
     </section>
 
-    <!-- Middle: source video -->
+    <!-- Middle: source preview -->
     <section class="panel">
-      <h2>Source video</h2>
+      <h2 id="sourceHeading">Source video</h2>
       <div class="stage">
         <video id="video" controls loop muted playsinline></video>
-        <div class="placeholder" id="videoPlaceholder">No video loaded</div>
+        <img id="sourceImg" class="hidden" alt="source frame" />
+        <div class="placeholder" id="videoPlaceholder">No source loaded</div>
       </div>
     </section>
 

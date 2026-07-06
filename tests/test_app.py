@@ -211,6 +211,52 @@ def test_generate_sheet_too_large(loaded_video):
     assert r.status_code == 400
 
 
+# --------------------------------------------------------- image sequences
+def test_load_folder_ok(image_dir):
+    r = client.post("/api/load-folder", json={"path": image_dir})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["kind"] == "images"
+    assert d["frame_count"] == 8
+    assert d["suggest_cols"] == 3 and d["suggest_rows"] == 3
+    # First-frame preview is fetchable.
+    assert client.get(d["sample_url"]).status_code == 200
+
+
+def test_load_folder_missing():
+    r = client.post("/api/load-folder", json={"path": "C:/nope/not_a_dir"})
+    assert r.status_code == 404
+
+
+def test_load_folder_empty(tmp_path):
+    d = tmp_path / "empty"
+    d.mkdir()
+    r = client.post("/api/load-folder", json={"path": str(d)})
+    assert r.status_code == 400
+
+
+def test_generate_from_images_keeps_alpha(image_dir):
+    import io
+    from PIL import Image
+    vid = client.post("/api/load-folder", json={"path": image_dir}).json()["video_id"]
+    r = client.post("/api/generate", json={
+        "video_id": vid, "cols": 3, "rows": 3, "cell": 32,
+        "loop": False, "alpha_mode": "source",
+    })
+    assert r.status_code == 200
+    d = r.json()
+    assert d["source_kind"] == "images"
+    assert d["frame_count"] == 8          # 8 real frames in a 9-cell sheet
+    assert d["columns"] == 3 and d["rows"] == 3
+    img = Image.open(io.BytesIO(client.get(d["preview_url"]).content))
+    assert img.mode == "RGBA"
+
+
+def test_frame_out_of_range(image_dir):
+    vid = client.post("/api/load-folder", json={"path": image_dir}).json()["video_id"]
+    assert client.get(f"/api/frames/{vid}/999").status_code == 404
+
+
 # -------------------------------------------------------------- output 404s
 def test_output_not_found():
     assert client.get("/output/nope_missing.png").status_code == 404

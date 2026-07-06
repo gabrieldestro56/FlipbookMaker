@@ -36,7 +36,7 @@ FORMATS = {
     "exr":  (".exr",  None,   True),
 }
 
-ALPHA_MODES = ("none", "luminance")
+ALPHA_MODES = ("none", "luminance", "source")
 POT_SIZES = (0, 256, 512, 1024, 2048, 4096)
 
 
@@ -44,15 +44,19 @@ def extension_for(fmt: str) -> str:
     return FORMATS[fmt.lower()][0]
 
 
-def build_alpha(bgr: np.ndarray, mode: str) -> Optional[np.ndarray]:
+def build_alpha(bgr: np.ndarray, mode: str,
+                source_alpha: Optional[np.ndarray] = None) -> Optional[np.ndarray]:
     """Return a uint8 alpha plane, or None for a fully opaque image.
 
     'luminance' uses Rec.709 luma so dark pixels become transparent — ideal for
-    additive VFX shot on a black background.
+    additive VFX shot on a black background. 'source' keeps the alpha that came
+    with the input (e.g. PNGs from an image-sequence flipbook).
     """
     mode = (mode or "none").lower()
     if mode == "none":
         return None
+    if mode == "source":
+        return source_alpha
     if mode == "luminance":
         b = bgr[..., 0].astype(np.float32)
         g = bgr[..., 1].astype(np.float32)
@@ -86,7 +90,7 @@ def encode(
     jpg_quality: int = 95,
 ) -> Tuple[bytes, str]:
     """
-    Encode a BGR sheet to bytes in the requested format.
+    Encode a BGR (or BGRA) sheet to bytes in the requested format.
 
     Returns (file_bytes, file_extension).
     """
@@ -98,8 +102,19 @@ def encode(
 
     ext, pil_fmt, supports_alpha = FORMATS[fmt]
 
-    bgr = sheet_bgr
-    alpha = build_alpha(bgr, alpha_mode) if supports_alpha else None
+    # Split any incoming alpha (BGRA sheets from an image sequence) off first.
+    if sheet_bgr.shape[-1] == 4:
+        bgr = sheet_bgr[..., :3].copy()
+        source_alpha = sheet_bgr[..., 3]
+    else:
+        bgr = sheet_bgr
+        source_alpha = None
+
+    # A BGRA sheet defaults to keeping its own alpha unless told otherwise.
+    if source_alpha is not None and alpha_mode.lower() == "none":
+        alpha_mode = "source"
+
+    alpha = build_alpha(bgr, alpha_mode, source_alpha) if supports_alpha else None
 
     if alpha is not None and premultiply:
         bgr = _premultiply(bgr, alpha)

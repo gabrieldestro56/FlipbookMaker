@@ -43,6 +43,18 @@ MAX_SHEET_DIM = 16384
 
 app = FastAPI(title="Flipbook Maker")
 
+
+@app.middleware("http")
+async def _no_cache(request, call_next):
+    """Never let the browser serve a stale UI. Forces a fresh fetch of the
+    HTML/JS/CSS on every load so updates always show up on refresh."""
+    response = await call_next(request)
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
+
+
 # video_id -> {"path": str, "info": dict}
 _videos: Dict[str, dict] = {}
 # video_id -> {"frames": List[np.ndarray], "cell": int}  (decoded resolution)
@@ -57,8 +69,42 @@ def _register(path: str) -> dict:
     except ValueError as e:
         raise HTTPException(400, str(e))
     vid = uuid.uuid4().hex[:12]
-    _videos[vid] = {"path": path, "info": info.as_dict()}
-    return {"video_id": vid, "info": info.as_dict(), "video_url": f"/api/video/{vid}"}
+    _videos[vid] = {"path": path, "kind": "video", "info": info.as_dict()}
+    return {
+        "video_id": vid,
+        "kind": "video",
+        "info": info.as_dict(),
+        "video_url": f"/api/video/{vid}",
+    }
+
+
+def _register_folder(folder: str) -> dict:
+    if not os.path.isdir(folder):
+        raise HTTPException(404, f"Folder not found: {folder}")
+    try:
+        files = core.list_image_files(folder)
+        info = core.probe_images(folder)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    vid = uuid.uuid4().hex[:12]
+    cols, rows = core.suggest_grid(len(files))
+    _videos[vid] = {
+        "path": folder,
+        "kind": "images",
+        "files": files,
+        "name": os.path.basename(os.path.normpath(folder)),
+        "info": info.as_dict(),
+    }
+    return {
+        "video_id": vid,
+        "kind": "images",
+        "info": info.as_dict(),
+        "frame_count": len(files),
+        "suggest_cols": cols,
+        "suggest_rows": rows,
+        "frames_url": f"/api/frames/{vid}",
+        "sample_url": f"/api/frames/{vid}/0",
+    }
 
 
 class LoadPath(BaseModel):
@@ -68,6 +114,23 @@ class LoadPath(BaseModel):
 @app.post("/api/load-path")
 def load_path(body: LoadPath):
     return _register(body.path.strip().strip('"'))
+
+
+@app.post("/api/load-folder")
+def load_folder(body: LoadPath):
+    return _register_folder(body.path.strip().strip('"'))
+
+
+@app.get("/api/frames/{video_id}/{index}")
+def get_frame(video_id: str, index: int):
+    """Serve one original image from a loaded sequence (preview thumbnails)."""
+    v = _videos.get(video_id)
+    if not v or v.get("kind") != "images":
+        raise HTTPException(404, "Unknown image sequence")
+    files = v["files"]
+    if index < 0 or index >= len(files):
+        raise HTTPException(404, "Frame index out of range")
+    return FileResponse(files[index])
 
 
 @app.post("/api/upload")
@@ -96,7 +159,10 @@ def _get_frames(video_id: str, min_cell: int) -> List[np.ndarray]:
     cached = _frame_cache.get(video_id)
     if cached is None or cached["cell"] < min_cell:
         decode_cell = max(DECODE_CELL, min_cell)
-        frames = core.decode_square_frames(v["path"], decode_cell)
+        if v.get("kind") == "images":
+            frames = core.decode_square_images(v["files"], decode_cell)
+        else:
+            frames = core.decode_square_frames(v["path"], decode_cell)
         _frame_cache[video_id] = {"frames": frames, "cell": decode_cell}
     return _frame_cache[video_id]["frames"]
 
@@ -145,13 +211,22 @@ def generate(req: GenerateReq):
                  "reduce grid size or cell resolution.")
 
     frames = _get_frames(req.video_id, req.cell)
+    src = _videos[req.video_id]
     t0 = time.time()
-    result = core.make_flipbook(
-        path=_videos[req.video_id]["path"],
-        cols=req.cols, rows=req.rows, cell=req.cell,
-        loop=req.loop, blend_frames=req.blend_frames, mode=req.mode,
-        frames=frames,
-    )
+    if src.get("kind") == "images":
+        result = core.make_flipbook_images(
+            paths=src["files"],
+            cols=req.cols, rows=req.rows, cell=req.cell,
+            loop=req.loop, blend_frames=req.blend_frames, mode=req.mode,
+            frames=frames,
+        )
+    else:
+        result = core.make_flipbook(
+            path=src["path"],
+            cols=req.cols, rows=req.rows, cell=req.cell,
+            loop=req.loop, blend_frames=req.blend_frames, mode=req.mode,
+            frames=frames,
+        )
 
     stem = f"flipbook_{req.cols}x{req.rows}_{uuid.uuid4().hex[:6]}"
 
@@ -191,7 +266,8 @@ def generate(req: GenerateReq):
         "alpha_mode": req.alpha_mode.lower(),
         "premultiplied_alpha": bool(req.premultiply and req.alpha_mode != "none"),
         "power_of_two": req.pot,
-        "source": os.path.basename(_videos[req.video_id]["path"]),
+        "source_kind": src.get("kind", "video"),
+        "source": src.get("name") or os.path.basename(src["path"]),
     }
     meta_name = stem + ".json"
     with open(os.path.join(OUTPUT_DIR, meta_name), "w", encoding="utf-8") as f:

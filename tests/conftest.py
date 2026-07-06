@@ -61,10 +61,39 @@ def seam_delta(seq: list) -> float:
     return float(np.mean(np.abs(a - b)))
 
 
+def make_image_sequence(folder: str, n: int = 8, w: int = 80, h: int = 60,
+                        alpha: bool = True) -> str:
+    """Write `n` numbered images (0..n-1) into `folder`, each a unique color and,
+    when `alpha` is set, carrying a real alpha channel. Returns the folder path."""
+    os.makedirs(folder, exist_ok=True)
+    for i in range(n):
+        val = int(255 * i / max(1, n - 1))
+        bgr = np.full((h, w, 3), (val, 255 - val, 128), dtype=np.uint8)
+        if alpha:
+            a = np.full((h, w, 1), val, dtype=np.uint8)
+            img = np.concatenate([bgr, a], axis=2)
+        else:
+            img = bgr
+        cv2.imwrite(os.path.join(folder, f"Frame_{i}.png"), img)
+    return folder
+
+
 @pytest.fixture(scope="session")
 def video_path(tmp_path_factory) -> str:
     stem = str(tmp_path_factory.mktemp("media") / "clip")
     return make_video(stem)
+
+
+@pytest.fixture(scope="session")
+def image_dir(tmp_path_factory) -> str:
+    folder = str(tmp_path_factory.mktemp("frames") / "Muzzle")
+    return make_image_sequence(folder, n=8, alpha=True)
+
+
+@pytest.fixture(scope="session")
+def image_dir_noalpha(tmp_path_factory) -> str:
+    folder = str(tmp_path_factory.mktemp("frames_rgb") / "Seq")
+    return make_image_sequence(folder, n=6, alpha=False)
 
 
 @pytest.fixture(scope="session")

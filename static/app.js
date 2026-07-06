@@ -2,9 +2,10 @@ const $ = (id) => document.getElementById(id);
 
 const state = {
   videoId: null,
+  kind: "video",     // "video" | "images"
   info: null,
   sheetImg: null,
-  meta: null,        // { cols, rows, cell, frame_count }
+  meta: null,        // { columns, rows, cell, frame_count }
   frame: 0,
   playing: true,
   lastTick: 0,
@@ -17,16 +18,40 @@ function setStatus(msg, kind = "") {
   el.className = "status" + (kind ? " " + kind : "");
 }
 
-// --------------------------------------------------------------------- load
-async function registerResponse(res) {
-  if (!res.ok) {
-    const t = await res.text();
-    throw new Error(t || res.statusText);
+// ---------------------------------------------------------------- source mode
+function setSourceMode(mode) {
+  state.kind = mode;
+  document.querySelectorAll("#sourceMode button").forEach((b) =>
+    b.classList.toggle("active", b.dataset.mode === mode));
+  $("videoSource").classList.toggle("hidden", mode !== "video");
+  $("imageSource").classList.toggle("hidden", mode !== "images");
+
+  if (mode === "images") {
+    $("sourceHeading").textContent = "Source frames";
+    $("alphaLabel").textContent = "Override alpha (luminance)";
+    $("alphaHint").textContent = "Transparent PNGs keep their own alpha automatically.";
+    $("loop").checked = false;                 // preserve exact frames by default
+    $("blend").value = 0; $("blendVal").textContent = "0";
+  } else {
+    $("sourceHeading").textContent = "Source video";
+    $("alphaLabel").textContent = "Alpha from luminance";
+    $("alphaHint").textContent = "Cuts out fire / smoke / explosions shot on black.";
   }
+}
+
+document.querySelectorAll("#sourceMode button").forEach((btn) => {
+  btn.addEventListener("click", () => setSourceMode(btn.dataset.mode));
+});
+
+// --------------------------------------------------------------- load (video)
+async function registerResponse(res) {
+  if (!res.ok) throw new Error((await res.text()) || res.statusText);
   const data = await res.json();
   state.videoId = data.video_id;
+  state.kind = "video";
   state.info = data.info;
 
+  $("sourceImg").classList.add("hidden");
   const v = $("video");
   v.src = data.video_url + "?t=" + Date.now();
   v.classList.remove("hidden");
@@ -76,6 +101,57 @@ $("loadPathBtn").addEventListener("click", async () => {
   }
 });
 
+// -------------------------------------------------------------- load (images)
+function applyGrid(cols, rows) {
+  $("cols").value = cols;
+  $("rows").value = rows;
+  $("square").checked = cols === rows;
+  document.querySelectorAll("#presets button").forEach((b) =>
+    b.classList.toggle("active", +b.dataset.grid === cols && cols === rows));
+  updateSheetHint();
+}
+
+$("loadFolderBtn").addEventListener("click", async () => {
+  const path = $("folderInput").value.trim();
+  if (!path) return;
+  setStatus("Scanning folder…", "busy");
+  try {
+    const res = await fetch("/api/load-folder", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path }),
+    });
+    if (!res.ok) throw new Error((await res.text()) || res.statusText);
+    const data = await res.json();
+
+    state.videoId = data.video_id;
+    state.kind = "images";
+    state.info = data.info;
+
+    // Preview the first frame in the source stage.
+    $("video").classList.add("hidden");
+    $("video").pause?.();
+    const img = $("sourceImg");
+    img.src = data.sample_url + "?t=" + Date.now();
+    img.classList.remove("hidden");
+    $("videoPlaceholder").classList.add("hidden");
+
+    const i = data.info;
+    $("videoMeta").textContent =
+      `${data.frame_count} images  ·  ${i.width}×${i.height} px  ·  ` +
+      `suggested grid ${data.suggest_cols}×${data.suggest_rows}`;
+
+    applyGrid(data.suggest_cols, data.suggest_rows);
+
+    $("generateBtn").disabled = false;
+    setStatus(
+      `${data.frame_count} images loaded — grid set to ` +
+      `${data.suggest_cols}×${data.suggest_rows}`, "ok");
+  } catch (err) {
+    setStatus("Load failed: " + err.message, "err");
+  }
+});
+
 // ------------------------------------------------------------------ controls
 function syncSquare(fromCols) {
   if ($("square").checked) {
@@ -88,7 +164,7 @@ function syncSquare(fromCols) {
 function updateSheetHint() {
   const cols = +$("cols").value, rows = +$("rows").value, cell = +$("cell").value;
   $("sheetSize").textContent =
-    `Sheet: ${cols * cell} × ${rows * cell} px · ${cols * rows} frames`;
+    `Sheet: ${cols * cell} × ${rows * cell} px · ${cols * rows} cells`;
 }
 
 $("cols").addEventListener("input", () => syncSquare(true));
@@ -98,12 +174,8 @@ $("square").addEventListener("change", () => syncSquare(true));
 
 document.querySelectorAll("#presets button").forEach((btn) => {
   btn.addEventListener("click", () => {
-    document.querySelectorAll("#presets button").forEach((b) => b.classList.remove("active"));
-    btn.classList.add("active");
-    const g = btn.dataset.grid;
-    $("cols").value = g; $("rows").value = g;
-    $("square").checked = true;
-    updateSheetHint();
+    const g = +btn.dataset.grid;
+    applyGrid(g, g);
   });
 });
 
@@ -119,12 +191,16 @@ $("alpha").addEventListener("change", (e) => {
 });
 
 // ------------------------------------------------------------------ generate
+function resolveAlphaMode() {
+  if ($("alpha").checked) return "luminance";
+  return state.kind === "images" ? "source" : "none";
+}
+
 $("generateBtn").addEventListener("click", async () => {
   if (!state.videoId) return;
   setStatus("Generating flipbook…", "busy");
   $("generateBtn").disabled = true;
   try {
-    const alphaOn = $("alpha").checked;
     const body = {
       video_id: state.videoId,
       cols: +$("cols").value,
@@ -134,7 +210,7 @@ $("generateBtn").addEventListener("click", async () => {
       blend_frames: +$("blend").value,
       mode: $("mode").value,
       fmt: $("fmt").value,
-      alpha_mode: alphaOn ? "luminance" : "none",
+      alpha_mode: resolveAlphaMode(),
       premultiply: $("premultiply").checked,
       pot: +$("pot").value,
       fps: state.fps,

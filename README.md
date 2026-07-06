@@ -1,14 +1,21 @@
 # Flipbook Maker
 
-Turn any video into a **game-ready square sprite sheet** ("flipbook") with a
-simple browser UI. Built for VFX / tech-art teams who need looping flipbooks
-for particles, decals, and animated textures.
+Turn any video **or folder of images** into a **game-ready square sprite sheet**
+("flipbook") with a simple browser UI. Built for VFX / tech-art teams who need
+looping flipbooks for particles, decals, and animated textures.
 
 **[▶ Live demo &amp; landing page](https://mradfo21.github.io/FlipbookMaker/)** — see the tool in action (a real flipbook loops right in your browser).
 
 ## Features
 
-- **Custom grids** — `8×8`, `10×10`, `12×12`, `16×16`, or any size up to `32×32`.
+- **Two source types** — a **video** clip *or* an **image sequence** (a folder
+  of numbered stills like `Frame_0.png … Frame_7.png`). Switch with the
+  segmented toggle in the Source panel.
+- **Image sequences preserve source alpha** — transparent PNGs (muzzle flashes,
+  decals, smoke cutouts) keep their real alpha channel all the way to the sheet;
+  the grid is auto-suggested from the frame count and images load in numeric
+  order starting at 0.
+- **Custom grids** — `4×4`, `8×8`, `10×10`, `16×16`, or any size up to `32×32`.
 - **Perfect squares** — every frame is center-cropped to a square cell, so the
   sheet is power-of-two friendly and engine ready.
 - **Cell resolution** control (64 / 128 / 256 / 512 px) with a live readout of
@@ -35,8 +42,12 @@ for particles, decals, and animated textures.
 
 ### Windows (one click)
 
-Double-click **`run.bat`** (or run `./run.ps1`). On first launch it creates a
-virtual environment, installs dependencies, then opens the app in your browser.
+Double-click **`run.bat`** (or right-click **`run.ps1`** → *Run with
+PowerShell*). It finds your Python, creates a virtual environment on first
+launch, installs dependencies (and re-installs automatically whenever
+`requirements.txt` changes), then opens the app in your browser at
+<http://127.0.0.1:8000/>. If anything goes wrong the window stays open with the
+error. To run the tests the same way, use **`test.bat`** / **`test.ps1`**.
 
 ### Manual
 
@@ -59,6 +70,24 @@ Then open <http://127.0.0.1:8000/>.
    still pops, lower it to preserve more unique motion).
 5. Click **Generate flipbook**, watch the right-hand preview loop, then
    **Download PNG**.
+
+## Making a flipbook from an image folder
+
+1. In **1 · Source**, click the **Image sequence** toggle.
+2. Paste the folder path (e.g. `C:\Users\me\Downloads\Muzzle_Side`) and click
+   **Load**. Images are picked up in numeric order (`…_0`, `…_1`, `…_2`, …) and
+   the grid is auto-set to the smallest square that fits (8 frames → 3×3).
+3. Adjust the grid if you like — e.g. bump it to **4×4** for an engine-friendly
+   square. Frames fill the leading cells in order; any leftover cells stay
+   fully transparent, and only the real frames play back in the preview.
+4. Leave **Alpha from luminance** *off* to keep the source PNG transparency
+   (recommended for muzzle flashes / decals), or turn it on to rebuild alpha
+   from brightness instead.
+5. **Generate flipbook** → **Download PNG**. A `.json` sidecar records the grid,
+   frame count, and `source_kind: images`.
+
+If a folder has *more* images than cells, the sequence is evenly sampled down to
+fit; if it has fewer, the extra cells are left transparent.
 
 ## Game-ready export
 
