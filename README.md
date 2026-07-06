@@ -46,8 +46,11 @@ Double-click **`run.bat`** (or right-click **`run.ps1`** → *Run with
 PowerShell*). It finds your Python, creates a virtual environment on first
 launch, installs dependencies (and re-installs automatically whenever
 `requirements.txt` changes), then opens the app in your browser at
-<http://127.0.0.1:8000/>. If anything goes wrong the window stays open with the
+<http://127.0.0.1:8090/>. If anything goes wrong the window stays open with the
 error. To run the tests the same way, use **`test.bat`** / **`test.ps1`**.
+
+> The app serves with no-cache headers and version-stamped assets, so refreshing
+> always shows the latest UI. Set `FLIPBOOK_PORT` to use a different port.
 
 ### Manual
 
@@ -59,7 +62,7 @@ pip install -r requirements.txt
 python app.py
 ```
 
-Then open <http://127.0.0.1:8000/>.
+Then open <http://127.0.0.1:8090/>.
 
 ## How to make a perfect looping 10×10
 

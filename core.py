@@ -424,6 +424,21 @@ def suggest_grid(n: int) -> tuple[int, int]:
     return side, side
 
 
+def auto_cell(native: int, cols: int, rows: int, max_dim: int = 8192,
+              min_cell: int = 16) -> int:
+    """Pick a per-frame cell size that keeps the source's native resolution
+    while ensuring the whole sheet fits inside `max_dim` (e.g. 8K).
+
+    `native` is the source's square edge (min of width/height). The sheet's
+    longest edge is max(cols, rows) * cell, so the largest cell that still fits
+    is max_dim // max(cols, rows). We never upscale here (auto = keep size);
+    users can request a larger cell explicitly to upscale.
+    """
+    native = max(1, int(native))
+    fit = max_dim // max(1, max(cols, rows))
+    return max(min_cell, min(native, fit))
+
+
 def _resize_frames(frames: List[np.ndarray], cell: int) -> List[np.ndarray]:
     if not frames or frames[0].shape[0] == cell:
         return frames

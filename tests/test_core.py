@@ -237,6 +237,19 @@ def test_suggest_grid():
     assert core.suggest_grid(1) == (1, 1)
 
 
+def test_auto_cell_keeps_native_within_cap():
+    # Native fits comfortably -> keep the source resolution.
+    assert core.auto_cell(2048, 3, 3, max_dim=8192) == 2048
+    # Fits exactly at the 8K edge (4 * 2048 == 8192).
+    assert core.auto_cell(2048, 4, 4, max_dim=8192) == 2048
+    # Too big for the grid -> shrink so the sheet stays within 8K.
+    assert core.auto_cell(2048, 5, 5, max_dim=8192) == 8192 // 5
+    # Small source is preserved, never upscaled by auto.
+    assert core.auto_cell(60, 3, 3, max_dim=8192) == 60
+    # Never drops below the minimum cell.
+    assert core.auto_cell(10000, 32, 32, max_dim=8192) == max(16, 8192 // 32)
+
+
 def test_decode_square_images_keeps_alpha(image_dir):
     files = core.list_image_files(image_dir)
     frames = core.decode_square_images(files, cell=48)

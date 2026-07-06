@@ -20,7 +20,7 @@ os.environ.setdefault("OPENCV_IO_ENABLE_OPENEXR", "1")
 
 import numpy as np
 from fastapi import FastAPI, File, HTTPException, UploadFile
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -37,9 +37,12 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 # Default decode resolution. Frames are decoded once and downscaled per request
 # so that changing the grid/loop settings is instant after the first decode.
 DECODE_CELL = 512
-# Largest sprite-sheet edge we allow (GPU max texture on most hardware), guards
-# against accidentally requesting a multi-gigabyte image.
-MAX_SHEET_DIM = 16384
+# Largest sprite-sheet edge we support end-to-end: 8K. Cells are sized so the
+# whole sheet stays within this, which also guards against multi-gigabyte images.
+MAX_SHEET_DIM = 8192
+# Hard cap on a single decoded frame so "auto"/native sizing can't blow up
+# memory on very large sources before it's tiled into the sheet.
+MAX_CELL = 8192
 
 app = FastAPI(title="Flipbook Maker")
 
@@ -171,7 +174,7 @@ class GenerateReq(BaseModel):
     video_id: str
     cols: int = 10
     rows: int = 10
-    cell: int = 256
+    cell: int = 0                 # 0 = auto: match source, fit within 8K
     loop: bool = True
     blend_frames: int = 4
     mode: str = "linear"          # "linear" | "optical"
@@ -193,8 +196,8 @@ _MEDIA_TYPES = {
 def generate(req: GenerateReq):
     if req.cols < 1 or req.rows < 1 or req.cols > 32 or req.rows > 32:
         raise HTTPException(400, "cols/rows must be between 1 and 32")
-    if req.cell < 16 or req.cell > 1024:
-        raise HTTPException(400, "cell must be between 16 and 1024")
+    if req.cell != 0 and (req.cell < 16 or req.cell > MAX_CELL):
+        raise HTTPException(400, f"cell must be 0 (auto) or between 16 and {MAX_CELL}")
     if req.blend_frames < 0:
         raise HTTPException(400, "blend_frames must be >= 0")
     if req.mode not in ("linear", "optical"):
@@ -205,25 +208,35 @@ def generate(req: GenerateReq):
         raise HTTPException(400, f"Unsupported alpha mode: {req.alpha_mode}")
     if req.pot not in export.POT_SIZES:
         raise HTTPException(400, f"Unsupported power-of-two size: {req.pot}")
-    if max(req.cols, req.rows) * req.cell > MAX_SHEET_DIM:
+
+    src = _videos.get(req.video_id)
+    if not src:
+        raise HTTPException(404, "Unknown video id")
+
+    # Resolve "auto" (cell == 0): keep the source's native resolution, sized so
+    # the whole sheet fits within 8K. Any explicit value is used as-is.
+    info = src["info"]
+    native = min(int(info["width"]), int(info["height"])) or MAX_CELL
+    cell = core.auto_cell(native, req.cols, req.rows, MAX_SHEET_DIM) if req.cell == 0 else req.cell
+
+    if max(req.cols, req.rows) * cell > MAX_SHEET_DIM:
         raise HTTPException(
-            400, f"Resulting sheet exceeds {MAX_SHEET_DIM}px per edge; "
+            400, f"Resulting sheet exceeds {MAX_SHEET_DIM}px per edge (8K); "
                  "reduce grid size or cell resolution.")
 
-    frames = _get_frames(req.video_id, req.cell)
-    src = _videos[req.video_id]
+    frames = _get_frames(req.video_id, cell)
     t0 = time.time()
     if src.get("kind") == "images":
         result = core.make_flipbook_images(
             paths=src["files"],
-            cols=req.cols, rows=req.rows, cell=req.cell,
+            cols=req.cols, rows=req.rows, cell=cell,
             loop=req.loop, blend_frames=req.blend_frames, mode=req.mode,
             frames=frames,
         )
     else:
         result = core.make_flipbook(
             path=src["path"],
-            cols=req.cols, rows=req.rows, cell=req.cell,
+            cols=req.cols, rows=req.rows, cell=cell,
             loop=req.loop, blend_frames=req.blend_frames, mode=req.mode,
             frames=frames,
         )
@@ -304,6 +317,24 @@ def download(name: str):
                         filename=os.path.basename(name))
 
 
+@app.get("/", response_class=HTMLResponse)
+@app.get("/index.html", response_class=HTMLResponse)
+def index():
+    """Serve the UI with cache-busting version stamps on its assets, so a
+    browser can never show a stale copy of the tool after an update."""
+    path = os.path.join(STATIC_DIR, "index.html")
+    with open(path, encoding="utf-8") as f:
+        html = f.read()
+    # Bust caches whenever any UI file changes.
+    version = str(int(max(
+        os.path.getmtime(os.path.join(STATIC_DIR, n))
+        for n in ("index.html", "app.js", "style.css")
+    )))
+    html = (html.replace("/style.css", f"/style.css?v={version}")
+                .replace("/app.js", f"/app.js?v={version}"))
+    return HTMLResponse(html)
+
+
 app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
 
 
@@ -317,7 +348,8 @@ def _open_browser(url: str):
 if __name__ == "__main__":
     import uvicorn
 
-    host, port = "127.0.0.1", 8000
+    host = os.environ.get("FLIPBOOK_HOST", "127.0.0.1")
+    port = int(os.environ.get("FLIPBOOK_PORT", "8090"))
     Timer(1.2, _open_browser, args=[f"http://{host}:{port}/"]).start()
     print(f"\n  Flipbook Maker running at  http://{host}:{port}/\n")
     uvicorn.run(app, host=host, port=port, log_level="warning")

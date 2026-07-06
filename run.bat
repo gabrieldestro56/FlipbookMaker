@@ -43,8 +43,9 @@ if defined NEED_INSTALL (
 
 echo.
 echo ================================================================
-echo   Flipbook Maker is starting at http://127.0.0.1:8000/
+echo   Flipbook Maker is starting at http://127.0.0.1:8090/
 echo   Your browser will open automatically. Close this window to stop.
+echo   Tip: if the page looks old, press Ctrl+Shift+R to hard-refresh.
 echo ================================================================
 echo.
 "%VENV_PY%" app.py

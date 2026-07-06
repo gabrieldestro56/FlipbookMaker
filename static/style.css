@@ -201,6 +201,7 @@ button:hover { border-color: var(--accent); }
 }
 
 .hint.subtle { color: var(--muted); margin-top: 4px; }
+.hint.warn { color: var(--danger); }
 
 .metalink {
   display: block; text-align: center; margin-top: 8px;

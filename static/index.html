@@ -74,14 +74,16 @@
 
       <label>Cell resolution
         <select id="cell">
-          <option value="64">64 px</option>
+          <option value="0" selected>Auto — match source (up to 8K)</option>
           <option value="128">128 px</option>
-          <option value="256" selected>256 px</option>
+          <option value="256">256 px</option>
           <option value="512">512 px</option>
           <option value="1024">1024 px</option>
+          <option value="2048">2048 px</option>
+          <option value="4096">4096 px</option>
         </select>
       </label>
-      <div class="hint" id="sheetSize">Sheet: 2560 × 2560 px · 100 frames</div>
+      <div class="hint" id="sheetSize">Load a source to size the sheet</div>
 
       <h2>3 · Loop</h2>
       <label class="check">
@@ -126,6 +128,7 @@
             <option value="1024">1024</option>
             <option value="2048">2048</option>
             <option value="4096">4096</option>
+            <option value="8192">8192 (8K)</option>
           </select>
         </label>
       </div>

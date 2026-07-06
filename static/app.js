@@ -1,5 +1,7 @@
 const $ = (id) => document.getElementById(id);
 
+const MAX_SHEET_DIM = 8192;  // 8K — matches the server-side cap
+
 const state = {
   videoId: null,
   kind: "video",     // "video" | "images"
@@ -69,6 +71,7 @@ async function registerResponse(res) {
     $("fpsVal").textContent = state.fps;
   }
 
+  updateSheetHint();
   $("generateBtn").disabled = false;
   setStatus("Video loaded — set your grid and generate", "ok");
 }
@@ -161,10 +164,35 @@ function syncSquare(fromCols) {
   updateSheetHint();
 }
 
+// Resolve the effective per-frame cell size, mirroring the server. When the
+// user picks "Auto", we keep the source's native square size but shrink it so
+// the whole sheet still fits within 8K.
+function currentCell() {
+  const cols = +$("cols").value, rows = +$("rows").value;
+  const picked = +$("cell").value;
+  if (picked !== 0) return picked;
+  if (!state.info) return 0;
+  const native = Math.min(state.info.width, state.info.height);
+  const fit = Math.floor(MAX_SHEET_DIM / Math.max(cols, rows));
+  return Math.max(16, Math.min(native, fit));
+}
+
 function updateSheetHint() {
-  const cols = +$("cols").value, rows = +$("rows").value, cell = +$("cell").value;
-  $("sheetSize").textContent =
-    `Sheet: ${cols * cell} × ${rows * cell} px · ${cols * rows} cells`;
+  const cols = +$("cols").value, rows = +$("rows").value;
+  const cell = currentCell();
+  const el = $("sheetSize");
+  if (!cell) {
+    el.textContent = "Load a source to size the sheet";
+    el.classList.remove("warn");
+    return;
+  }
+  const auto = +$("cell").value === 0;
+  const w = cols * cell, h = rows * cell;
+  const cap = Math.max(w, h) > MAX_SHEET_DIM;
+  el.textContent =
+    `Output: ${w} × ${h} px · ${cols * rows} cells · ${cell} px/frame` +
+    (auto ? " (auto)" : "") + (cap ? "  ⚠ exceeds 8K" : "");
+  el.classList.toggle("warn", cap);
 }
 
 $("cols").addEventListener("input", () => syncSquare(true));

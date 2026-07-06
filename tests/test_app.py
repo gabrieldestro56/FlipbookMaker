@@ -257,6 +257,42 @@ def test_frame_out_of_range(image_dir):
     assert client.get(f"/api/frames/{vid}/999").status_code == 404
 
 
+def test_generate_auto_cell_images(image_dir):
+    # cell omitted -> auto. Fixtures are 80x60, so the native square is 60.
+    vid = client.post("/api/load-folder", json={"path": image_dir}).json()["video_id"]
+    r = client.post("/api/generate", json={"video_id": vid, "cols": 3, "rows": 3})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["cell"] == 60
+    assert d["sheet_width"] == d["sheet_height"] == 180
+
+
+def test_generate_auto_cell_video_fits_8k(loaded_video):
+    r = client.post("/api/generate", json={"video_id": loaded_video, "cols": 4, "rows": 4})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["cell"] > 0
+    assert max(d["sheet_width"], d["sheet_height"]) <= 8192
+
+
+def test_generate_images_upscale(image_dir):
+    # Explicit cell larger than the source upscales each frame.
+    vid = client.post("/api/load-folder", json={"path": image_dir}).json()["video_id"]
+    r = client.post("/api/generate", json={
+        "video_id": vid, "cols": 3, "rows": 3, "cell": 512})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["cell"] == 512
+    assert d["sheet_width"] == 1536
+
+
+def test_generate_pot_8k(loaded_video):
+    r = client.post("/api/generate", json={
+        "video_id": loaded_video, "cols": 4, "rows": 4, "cell": 64, "pot": 8192})
+    assert r.status_code == 200
+    assert r.json()["sheet_width"] == 8192
+
+
 # -------------------------------------------------------------- output 404s
 def test_output_not_found():
     assert client.get("/output/nope_missing.png").status_code == 404

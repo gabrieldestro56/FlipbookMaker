@@ -37,7 +37,7 @@ FORMATS = {
 }
 
 ALPHA_MODES = ("none", "luminance", "source")
-POT_SIZES = (0, 256, 512, 1024, 2048, 4096)
+POT_SIZES = (0, 256, 512, 1024, 2048, 4096, 8192)
 
 
 def extension_for(fmt: str) -> str:

@@ -48,8 +48,9 @@ if ($needInstall) {
 
 Write-Host ""
 Write-Host "================================================================" -ForegroundColor Green
-Write-Host "  Flipbook Maker is starting at http://127.0.0.1:8000/" -ForegroundColor Green
+Write-Host "  Flipbook Maker is starting at http://127.0.0.1:8090/" -ForegroundColor Green
 Write-Host "  Your browser will open automatically. Close this window to stop." -ForegroundColor Green
+Write-Host "  Tip: if the page looks old, press Ctrl+Shift+R to hard-refresh." -ForegroundColor Green
 Write-Host "================================================================" -ForegroundColor Green
 Write-Host ""
 & $venvPy app.py
