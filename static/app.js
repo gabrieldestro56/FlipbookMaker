@@ -76,6 +76,41 @@ async function registerResponse(res) {
   setStatus("Video loaded — set your grid and generate", "ok");
 }
 
+// Native OS picker (server-side dialog) -> fills the path box and loads.
+async function nativeBrowse(kind) {
+  const res = await fetch("/api/browse", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ kind }),
+  });
+  if (!res.ok) throw new Error((await res.text()) || res.statusText);
+  return (await res.json()).path;
+}
+
+$("browseFileBtn").addEventListener("click", async () => {
+  setStatus("Opening file picker…", "busy");
+  try {
+    const p = await nativeBrowse("file");
+    if (!p) { setStatus("Pick cancelled"); return; }
+    $("pathInput").value = p;
+    $("loadPathBtn").click();
+  } catch (err) {
+    setStatus("Couldn't open picker: " + err.message, "err");
+  }
+});
+
+$("browseFolderBtn").addEventListener("click", async () => {
+  setStatus("Opening folder picker…", "busy");
+  try {
+    const p = await nativeBrowse("folder");
+    if (!p) { setStatus("Pick cancelled"); return; }
+    $("folderInput").value = p;
+    $("loadFolderBtn").click();
+  } catch (err) {
+    setStatus("Couldn't open picker: " + err.message, "err");
+  }
+});
+
 $("fileInput").addEventListener("change", async (e) => {
   const file = e.target.files[0];
   if (!file) return;

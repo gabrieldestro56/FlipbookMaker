@@ -113,6 +113,17 @@ main {
 }
 .filebtn span:hover { border-color: var(--accent); }
 
+/* <button> variant of the file picker (native dialog) */
+button.filebtn {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: none;
+}
+button.filebtn:hover { border: none; }
+
 .orline { text-align: center; color: var(--muted); font-size: 11px; margin: 12px 0; position: relative; }
 .orline::before, .orline::after {
   content: ""; position: absolute; top: 50%; width: 30%; height: 1px; background: var(--line);
@@ -235,11 +246,11 @@ button:hover { border-color: var(--accent); }
 }
 .seg button:hover:not(.active) { color: var(--text); border-color: var(--line); }
 
-label.tip {
+.tip {
   display: block;
   color: var(--muted);
   font-size: 12px;
-  margin: 0 0 8px;
+  margin: 8px 0;
 }
 
 #sourceImg {

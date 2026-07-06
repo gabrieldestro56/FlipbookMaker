@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
+import sys
 import time
 import uuid
 import webbrowser
@@ -112,6 +114,47 @@ def _register_folder(folder: str) -> dict:
 
 class LoadPath(BaseModel):
     path: str
+
+
+class BrowseReq(BaseModel):
+    kind: str = "folder"        # "folder" | "file"
+
+
+# Runs in a short-lived subprocess so the native Tk dialog never fights with
+# the server's event loop / worker threads.
+_BROWSE_SCRIPT = r"""
+import sys
+import tkinter as tk
+from tkinter import filedialog
+
+root = tk.Tk()
+root.withdraw()
+root.attributes("-topmost", True)
+if sys.argv[1] == "file":
+    path = filedialog.askopenfilename(
+        title="Select a video",
+        filetypes=[("Video files", "*.mp4 *.mov *.avi *.mkv *.webm *.m4v"),
+                   ("All files", "*.*")])
+else:
+    path = filedialog.askdirectory(title="Select an image-sequence folder")
+root.destroy()
+sys.stdout.write(path or "")
+"""
+
+
+@app.post("/api/browse")
+def browse(body: BrowseReq):
+    """Open a native OS picker on the machine running the server and return the
+    chosen path. Only useful when the app is used locally (its intended mode)."""
+    kind = "file" if body.kind == "file" else "folder"
+    try:
+        out = subprocess.run(
+            [sys.executable, "-c", _BROWSE_SCRIPT, kind],
+            capture_output=True, text=True, timeout=300,
+        )
+    except Exception as e:  # pragma: no cover - environment dependent
+        raise HTTPException(500, f"Could not open the picker: {e}")
+    return {"path": out.stdout.strip() or None}
 
 
 @app.post("/api/load-path")

@@ -30,11 +30,11 @@
 
       <!-- Video source -->
       <div id="videoSource">
-        <label class="filebtn">
-          <input type="file" id="fileInput" accept="video/*" hidden />
+        <button type="button" id="browseFileBtn" class="filebtn">
           <span>Choose video file…</span>
-        </label>
-        <div class="orline"><span>or load by path</span></div>
+        </button>
+        <input type="file" id="fileInput" accept="video/*" hidden />
+        <div class="orline"><span>or paste a path</span></div>
         <div class="row">
           <input type="text" id="pathInput" placeholder="C:\path\to\video.mp4" />
           <button id="loadPathBtn" class="ghost">Load</button>
@@ -43,7 +43,11 @@
 
       <!-- Image sequence source -->
       <div id="imageSource" class="hidden">
-        <label class="tip">Point to a folder of numbered images (0, 1, 2 …).</label>
+        <button type="button" id="browseFolderBtn" class="filebtn">
+          <span>Choose image folder…</span>
+        </button>
+        <div class="tip">A folder of numbered images (0, 1, 2 …).</div>
+        <div class="orline"><span>or paste a folder path</span></div>
         <div class="row">
           <input type="text" id="folderInput" placeholder="C:\path\to\frames" />
           <button id="loadFolderBtn" class="ghost">Load</button>

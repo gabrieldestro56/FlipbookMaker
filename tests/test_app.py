@@ -257,6 +257,24 @@ def test_frame_out_of_range(image_dir):
     assert client.get(f"/api/frames/{vid}/999").status_code == 404
 
 
+def test_browse_returns_path(monkeypatch):
+    class Fake:
+        stdout = "C:/some/folder\n"
+    monkeypatch.setattr(appmod.subprocess, "run", lambda *a, **k: Fake())
+    r = client.post("/api/browse", json={"kind": "folder"})
+    assert r.status_code == 200
+    assert r.json()["path"] == "C:/some/folder"
+
+
+def test_browse_cancel_returns_none(monkeypatch):
+    class Fake:
+        stdout = ""
+    monkeypatch.setattr(appmod.subprocess, "run", lambda *a, **k: Fake())
+    r = client.post("/api/browse", json={"kind": "file"})
+    assert r.status_code == 200
+    assert r.json()["path"] is None
+
+
 def test_generate_auto_cell_images(image_dir):
     # cell omitted -> auto. Fixtures are 80x60, so the native square is 60.
     vid = client.post("/api/load-folder", json={"path": image_dir}).json()["video_id"]
