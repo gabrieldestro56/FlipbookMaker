@@ -154,6 +154,10 @@ def browse(body: BrowseReq):
         )
     except Exception as e:  # pragma: no cover - environment dependent
         raise HTTPException(500, f"Could not open the picker: {e}")
+    # A crashed picker (e.g. broken Tcl/Tk) also prints nothing; don't report it as "cancelled".
+    if out.returncode != 0:
+        err = (out.stderr or "").strip().splitlines()
+        raise HTTPException(500, f"Picker failed: {err[-1] if err else 'exit code %d' % out.returncode}")
     return {"path": out.stdout.strip() or None}
 
 

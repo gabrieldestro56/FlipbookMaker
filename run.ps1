@@ -27,8 +27,14 @@ $venvPy = Join-Path $PSScriptRoot ".venv\Scripts\python.exe"
 if (-not (Test-Path $venvPy)) {
     Write-Host "Creating virtual environment..."
     $exe = $py[0]
-    $rest = if ($py.Count -gt 1) { $py[1..($py.Count - 1)] } else { @() }
+    # @() keeps a single extra arg (e.g. "-3") an array; splatting a bare string drops all args in PS 5.1.
+    $rest = @($py | Select-Object -Skip 1)
     & $exe @rest -m venv .venv
+    if (-not (Test-Path $venvPy)) {
+        Write-Host "[ERROR] Could not create the virtual environment - see above." -ForegroundColor Red
+        Read-Host "Press Enter to exit"
+        exit 1
+    }
 }
 
 # Install deps if missing or requirements.txt changed.
@@ -43,6 +49,11 @@ if ($needInstall) {
     Write-Host "Installing dependencies (first run or requirements changed)..."
     & $venvPy -m pip install --upgrade pip
     & $venvPy -m pip install -r requirements.txt
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "[ERROR] Installing dependencies failed - see above." -ForegroundColor Red
+        Read-Host "Press Enter to exit"
+        exit 1
+    }
     Copy-Item requirements.txt $depsMarker -Force
 }
 

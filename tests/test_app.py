@@ -309,6 +309,7 @@ def test_frame_out_of_range(image_dir):
 
 def test_browse_returns_path(monkeypatch):
     class Fake:
+        returncode = 0
         stdout = "C:/some/folder\n"
     monkeypatch.setattr(appmod.subprocess, "run", lambda *a, **k: Fake())
     r = client.post("/api/browse", json={"kind": "folder"})
@@ -318,11 +319,23 @@ def test_browse_returns_path(monkeypatch):
 
 def test_browse_cancel_returns_none(monkeypatch):
     class Fake:
+        returncode = 0
         stdout = ""
     monkeypatch.setattr(appmod.subprocess, "run", lambda *a, **k: Fake())
     r = client.post("/api/browse", json={"kind": "file"})
     assert r.status_code == 200
     assert r.json()["path"] is None
+
+
+def test_browse_crash_reports_error(monkeypatch):
+    class Fake:
+        returncode = 1
+        stdout = ""
+        stderr = "Traceback...\n_tkinter.TclError: Can't find a usable init.tcl\n"
+    monkeypatch.setattr(appmod.subprocess, "run", lambda *a, **k: Fake())
+    r = client.post("/api/browse", json={"kind": "folder"})
+    assert r.status_code == 500
+    assert "init.tcl" in r.json()["detail"]
 
 
 def test_generate_auto_cell_images(image_dir):
