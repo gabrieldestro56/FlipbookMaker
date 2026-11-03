@@ -78,7 +78,18 @@ def _center_square_crop(frame: np.ndarray) -> np.ndarray:
     return frame[y0:y0 + side, x0:x0 + side]
 
 
-def decode_square_frames(path: str, cell: int) -> List[np.ndarray]:
+def _crop_square(frame: np.ndarray, crop=None) -> np.ndarray:
+    """Cut the user's crop rect (x, y, w, h as 0..1 fractions of the frame; None =
+    whole frame) out of `frame`, then center-square it so cells stay square."""
+    if crop:
+        h, w = frame.shape[:2]
+        x0, y0 = int(round(crop[0] * w)), int(round(crop[1] * h))
+        x1, y1 = int(round((crop[0] + crop[2]) * w)), int(round((crop[1] + crop[3]) * h))
+        frame = frame[y0:max(y1, y0 + 1), x0:max(x1, x0 + 1)]
+    return _center_square_crop(frame)
+
+
+def decode_square_frames(path: str, cell: int, crop=None) -> List[np.ndarray]:
     """
     Decode the entire clip into a list of square BGR uint8 frames sized
     `cell` x `cell`. Sequential decoding (not seeking) keeps this robust
@@ -100,7 +111,7 @@ def decode_square_frames(path: str, cell: int) -> List[np.ndarray]:
             if not ok:
                 break
             if idx % stride == 0:
-                sq = _center_square_crop(frame)
+                sq = _crop_square(frame, crop)
                 sq = cv2.resize(sq, (cell, cell), interpolation=cv2.INTER_AREA)
                 frames.append(sq)
             idx += 1
@@ -176,7 +187,7 @@ def _imread_any(path: str) -> Optional[np.ndarray]:
     return img[..., :3]  # drop any extra planes, keep BGR
 
 
-def decode_square_images(paths: List[str], cell: int) -> List[np.ndarray]:
+def decode_square_images(paths: List[str], cell: int, crop=None) -> List[np.ndarray]:
     """
     Decode an image sequence into square uint8 frames sized `cell`x`cell`.
 
@@ -201,7 +212,7 @@ def decode_square_images(paths: List[str], cell: int) -> List[np.ndarray]:
             im = np.concatenate([im, a], axis=2)
         elif not want_alpha and im.shape[2] == 4:
             im = im[..., :3]
-        sq = _center_square_crop(im)
+        sq = _crop_square(im, crop)
         sq = cv2.resize(sq, (cell, cell), interpolation=cv2.INTER_AREA)
         frames.append(sq)
     return frames

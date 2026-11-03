@@ -12,6 +12,10 @@ const state = {
   playing: true,
   lastTick: 0,
   fps: 24,
+  srcKind: "",       // kind of the loaded source (state.kind follows the tab)
+  crop: null,        // { x, y, s } square in source pixels; null = center square
+  frameCount: 0,     // images only
+  framesUrl: "",     // images only
 };
 
 function setStatus(msg, kind = "") {
@@ -50,7 +54,7 @@ async function registerResponse(res) {
   if (!res.ok) throw new Error((await res.text()) || res.statusText);
   const data = await res.json();
   state.videoId = data.video_id;
-  state.kind = "video";
+  state.kind = state.srcKind = "video";
   state.info = data.info;
 
   $("sourceImg").classList.add("hidden");
@@ -71,7 +75,7 @@ async function registerResponse(res) {
     $("fpsVal").textContent = state.fps;
   }
 
-  updateSheetHint();
+  resetEdit();
   $("generateBtn").disabled = false;
   setStatus("Video loaded — set your grid and generate", "ok");
 }
@@ -163,8 +167,10 @@ $("loadFolderBtn").addEventListener("click", async () => {
     const data = await res.json();
 
     state.videoId = data.video_id;
-    state.kind = "images";
+    state.kind = state.srcKind = "images";
     state.info = data.info;
+    state.frameCount = data.frame_count;
+    state.framesUrl = data.frames_url;
 
     // Preview the first frame in the source stage.
     $("video").classList.add("hidden");
@@ -180,6 +186,7 @@ $("loadFolderBtn").addEventListener("click", async () => {
       `suggested grid ${data.suggest_cols}×${data.suggest_rows}`;
 
     applyGrid(data.suggest_cols, data.suggest_rows);
+    resetEdit();
 
     $("generateBtn").disabled = false;
     setStatus(
@@ -207,7 +214,8 @@ function currentCell() {
   const picked = +$("cell").value;
   if (picked !== 0) return picked;
   if (!state.info) return 0;
-  const native = Math.min(state.info.width, state.info.height);
+  const native = state.crop ? Math.floor(state.crop.s)
+                            : Math.min(state.info.width, state.info.height);
   const fit = Math.floor(MAX_SHEET_DIM / Math.max(cols, rows));
   return Math.max(16, Math.min(native, fit));
 }
@@ -253,6 +261,140 @@ $("alpha").addEventListener("change", (e) => {
   if (!e.target.checked) $("premultiply").checked = false;
 });
 
+// ------------------------------------------------------------- trim & crop
+// Trim sliders run 0..max: max = 1000 for video, the image count for sequences
+// (so each step is one frame). Kept range is [start, end) of the clip.
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+const trimFrac = () => [+$("trimStart").value / +$("trimStart").max,
+                        +$("trimEnd").value / +$("trimEnd").max];
+const clipDuration = () => {
+  const d = $("video").duration;
+  return isFinite(d) && d > 0 ? d : state.info.duration;
+};
+
+function resetEdit() {
+  const max = state.srcKind === "images" ? state.frameCount : 1000;
+  $("trimStart").max = $("trimEnd").max = max;
+  $("trimStart").value = 0;
+  $("trimEnd").value = max;
+  $("cropOn").checked = false;
+  state.crop = null;
+  placeCropBox();
+  updateTrimLabels();
+  updateSheetHint();
+  $("editBar").classList.remove("hidden");
+}
+
+function updateTrimLabels() {
+  const a = +$("trimStart").value, b = +$("trimEnd").value;
+  if (state.srcKind === "images") {
+    $("trimStartVal").textContent = `frame ${a}`;
+    $("trimEndVal").textContent = `frame ${b - 1}`;
+    $("trimLen").textContent = `${b - a} of ${state.frameCount} frames`;
+  } else {
+    const [s, e] = trimFrac(), d = clipDuration();
+    $("trimStartVal").textContent = (s * d).toFixed(2) + "s";
+    $("trimEndVal").textContent = (e * d).toFixed(2) + "s";
+    $("trimLen").textContent = `${((e - s) * d).toFixed(2)}s kept`;
+  }
+}
+
+// Dragging a handle shows that frame; the two handles can't cross.
+function onTrimInput(isStart) {
+  const a = $("trimStart"), b = $("trimEnd");
+  if (isStart) a.value = Math.min(+a.value, +b.value - 1);
+  else b.value = Math.max(+b.value, +a.value + 1);
+  updateTrimLabels();
+  if (state.srcKind === "images") {
+    const i = isStart ? +a.value : +b.value - 1;
+    $("sourceImg").src = `${state.framesUrl}/${i}`;
+  } else {
+    const v = $("video");
+    v.pause();
+    v.currentTime = Math.max(0, trimFrac()[isStart ? 0 : 1] * clipDuration() - (isStart ? 0 : 0.05));
+  }
+}
+$("trimStart").addEventListener("input", () => onTrimInput(true));
+$("trimEnd").addEventListener("input", () => onTrimInput(false));
+for (const id of ["trimStart", "trimEnd"]) {
+  $(id).addEventListener("change", () => { if (state.srcKind === "video") $("video").play().catch(() => {}); });
+}
+
+// Keep video playback looping inside the trimmed range.
+$("video").addEventListener("timeupdate", () => {
+  const v = $("video");
+  if (v.paused || !state.info || state.srcKind !== "video") return;
+  const [s, e] = trimFrac(), d = clipDuration();
+  if (v.currentTime >= e * d || v.currentTime < s * d - 0.1) v.currentTime = s * d;
+});
+$("video").addEventListener("loadedmetadata", () => { updateTrimLabels(); placeCropBox(); });
+
+// Where the media is drawn inside the stage (object-fit: contain letterboxes it).
+function mediaRect() {
+  const el = state.srcKind === "images" ? $("sourceImg") : $("video");
+  const W = state.info.width, H = state.info.height;
+  const scale = Math.min(el.clientWidth / W, el.clientHeight / H);
+  return {
+    left: el.offsetLeft + (el.clientWidth - W * scale) / 2,
+    top: el.offsetTop + (el.clientHeight - H * scale) / 2,
+    scale,
+  };
+}
+
+function placeCropBox() {
+  const box = $("cropBox");
+  box.classList.toggle("hidden", !state.crop);
+  if (!state.crop) return;
+  const r = mediaRect(), c = state.crop;
+  box.style.left = r.left + c.x * r.scale + "px";
+  box.style.top = r.top + c.y * r.scale + "px";
+  box.style.width = box.style.height = c.s * r.scale + "px";
+}
+
+function defaultCrop() {
+  const W = state.info.width, H = state.info.height;
+  const s = Math.round(Math.min(W, H) * 0.8);
+  return { x: (W - s) / 2, y: (H - s) / 2, s };
+}
+
+$("cropOn").addEventListener("change", (e) => {
+  state.crop = e.target.checked && state.info ? defaultCrop() : null;
+  placeCropBox();
+  updateSheetHint();
+});
+$("cropReset").addEventListener("click", () => {
+  if (!state.crop) return;
+  state.crop = defaultCrop();
+  placeCropBox();
+  updateSheetHint();
+});
+
+let cropDrag = null;
+$("cropBox").addEventListener("pointerdown", (e) => {
+  e.preventDefault();
+  cropDrag = { resize: e.target.id === "cropHandle", px: e.clientX, py: e.clientY,
+               start: { ...state.crop } };
+  $("cropBox").setPointerCapture(e.pointerId);
+});
+$("cropBox").addEventListener("pointermove", (e) => {
+  if (!cropDrag) return;
+  const k = mediaRect().scale;
+  const dx = (e.clientX - cropDrag.px) / k, dy = (e.clientY - cropDrag.py) / k;
+  const W = state.info.width, H = state.info.height, s0 = cropDrag.start, c = state.crop;
+  if (cropDrag.resize) {
+    c.s = clamp(s0.s + Math.max(dx, dy), 16, Math.min(W - s0.x, H - s0.y));
+  } else {
+    c.x = clamp(s0.x + dx, 0, W - c.s);
+    c.y = clamp(s0.y + dy, 0, H - c.s);
+  }
+  placeCropBox();
+  updateSheetHint();
+});
+for (const ev of ["pointerup", "pointercancel"]) {
+  $("cropBox").addEventListener(ev, () => { cropDrag = null; });
+}
+window.addEventListener("resize", placeCropBox);
+
 // ------------------------------------------------------------------ generate
 function resolveAlphaMode() {
   if ($("alpha").checked) return "luminance";
@@ -277,6 +419,10 @@ $("generateBtn").addEventListener("click", async () => {
       premultiply: $("premultiply").checked,
       pot: +$("pot").value,
       fps: state.fps,
+      trim_start: trimFrac()[0],
+      trim_end: trimFrac()[1],
+      crop: state.crop && [state.crop.x / state.info.width, state.crop.y / state.info.height,
+                           state.crop.s / state.info.width, state.crop.s / state.info.height],
     };
     const res = await fetch("/api/generate", {
       method: "POST",

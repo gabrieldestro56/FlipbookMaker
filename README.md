@@ -18,6 +18,9 @@ looping flipbooks for particles, decals, and animated textures.
 - **Custom grids** — `4×4`, `8×8`, `10×10`, `16×16`, or any size up to `32×32`.
 - **Perfect squares** — every frame is center-cropped to a square cell, so the
   sheet is power-of-two friendly and engine ready.
+- **Trim & crop** — drag the two trim handles under the source to keep only part
+  of the clip (or a frame range of a sequence), and tick **Crop** to drag/resize a
+  square box over the source instead of the default center square.
 - **Cell resolution** control (64 / 128 / 256 / 512 px) with a live readout of
   the final sheet dimensions.
 - **Seamless looping** via a motion-aware cross-blend at the loop seam.

@@ -315,3 +315,45 @@ def test_generate_pot_8k(loaded_video):
 def test_output_not_found():
     assert client.get("/output/nope_missing.png").status_code == 404
     assert client.get("/api/download/nope_missing.png").status_code == 404
+
+
+# ------------------------------------------------------------- trim / crop
+def test_generate_trim_images_keeps_range(image_dir):
+    # 8 images, keep [2/8, 5/8) -> 3 frames in an underfilled 3x3 grid.
+    vid = client.post("/api/load-folder", json={"path": image_dir}).json()["video_id"]
+    r = client.post("/api/generate", json={"video_id": vid, "cols": 3, "rows": 3, "loop": False,
+                                           "trim_start": 2 / 8, "trim_end": 5 / 8})
+    assert r.status_code == 200
+    assert r.json()["frame_count"] == 3
+
+
+def test_generate_trim_video(loaded_video):
+    r = client.post("/api/generate", json={"video_id": loaded_video, "cols": 2, "rows": 2,
+                                           "trim_start": 0.25, "trim_end": 0.5})
+    assert r.status_code == 200
+    assert r.json()["frame_count"] == 4
+
+
+@pytest.mark.parametrize("trim", [(0.5, 0.5), (-0.1, 1.0), (0.0, 1.5)])
+def test_generate_bad_trim(loaded_video, trim):
+    r = client.post("/api/generate", json={"video_id": loaded_video,
+                                           "trim_start": trim[0], "trim_end": trim[1]})
+    assert r.status_code == 400
+
+
+def test_generate_crop_sets_auto_cell(image_dir):
+    # 80x60 fixtures; crop a 30x30 px square -> auto cell 30.
+    vid = client.post("/api/load-folder", json={"path": image_dir}).json()["video_id"]
+    r = client.post("/api/generate", json={"video_id": vid, "cols": 3, "rows": 3,
+                                           "crop": [0.1, 0.1, 30 / 80, 30 / 60]})
+    assert r.status_code == 200
+    assert r.json()["cell"] == 30
+    # Back to no crop: cache must re-decode the full center square.
+    r = client.post("/api/generate", json={"video_id": vid, "cols": 3, "rows": 3})
+    assert r.json()["cell"] == 60
+
+
+@pytest.mark.parametrize("crop", [[0.5, 0.5, 0.6, 0.2], [0, 0, 0, 0.5], [0, 0, 1]])
+def test_generate_bad_crop(loaded_video, crop):
+    r = client.post("/api/generate", json={"video_id": loaded_video, "crop": crop})
+    assert r.status_code == 400
