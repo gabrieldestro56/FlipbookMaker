@@ -15,7 +15,7 @@ import time
 import uuid
 import webbrowser
 from threading import Timer
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 # Enable EXR before cv2 is imported anywhere in the process.
 os.environ.setdefault("OPENCV_IO_ENABLE_OPENEXR", "1")
@@ -62,7 +62,7 @@ async def _no_cache(request, call_next):
 
 # video_id -> {"path": str, "info": dict}
 _videos: Dict[str, dict] = {}
-# video_id -> {"frames": List[np.ndarray], "cell": int}  (decoded resolution)
+# video_id -> {"frames": List[np.ndarray], "cell": int, "crop": tuple|None}
 _frame_cache: Dict[str, dict] = {}
 
 
@@ -196,20 +196,21 @@ def get_video(video_id: str):
     return FileResponse(v["path"])
 
 
-def _get_frames(video_id: str, min_cell: int) -> List[np.ndarray]:
+def _get_frames(video_id: str, min_cell: int, crop=None) -> List[np.ndarray]:
     """Return decoded frames at a resolution >= min_cell, decoding (and caching)
-    at a higher resolution if needed so output cells are never upscaled."""
+    at a higher resolution if needed so output cells are never upscaled.
+    A different crop rect forces a re-decode."""
     v = _videos.get(video_id)
     if not v:
         raise HTTPException(404, "Unknown video id")
     cached = _frame_cache.get(video_id)
-    if cached is None or cached["cell"] < min_cell:
+    if cached is None or cached["cell"] < min_cell or cached.get("crop") != crop:
         decode_cell = max(DECODE_CELL, min_cell)
         if v.get("kind") == "images":
-            frames = core.decode_square_images(v["files"], decode_cell)
+            frames = core.decode_square_images(v["files"], decode_cell, crop)
         else:
-            frames = core.decode_square_frames(v["path"], decode_cell)
-        _frame_cache[video_id] = {"frames": frames, "cell": decode_cell}
+            frames = core.decode_square_frames(v["path"], decode_cell, crop)
+        _frame_cache[video_id] = {"frames": frames, "cell": decode_cell, "crop": crop}
     return _frame_cache[video_id]["frames"]
 
 
@@ -223,10 +224,35 @@ def _chroma(img: np.ndarray, color: str, tolerance: int) -> np.ndarray:
         raise HTTPException(400, str(e))
 
 
+def _check_edit(crop: Optional[List[float]], trim_start: float, trim_end: float):
+    """Validate trim + crop (0..1 fractions); return the crop as a tuple or None."""
+    if not 0.0 <= trim_start < trim_end <= 1.0:
+        raise HTTPException(400, "trim must satisfy 0 <= trim_start < trim_end <= 1")
+    if crop is None:
+        return None
+    x, y, w, h = crop if len(crop) == 4 else (-1, -1, 0, 0)
+    if x < 0 or y < 0 or w <= 0 or h <= 0 or x + w > 1.0001 or y + h > 1.0001:
+        raise HTTPException(400, "crop must be [x, y, w, h] fractions inside the frame")
+    return (x, y, w, h)
+
+
+def _trim(frames: List[np.ndarray], trim_start: float, trim_end: float) -> List[np.ndarray]:
+    n = len(frames)
+    a = min(n - 1, int(round(trim_start * n)))
+    return frames[a:max(a + 1, int(round(trim_end * n)))]
+
+
 @app.get("/api/chroma-preview/{video_id}")
-def chroma_preview(video_id: str, color: str = "#00ff00", tolerance: int = 60):
-    """One keyed frame (the clip's middle) as PNG, so the key can be tuned live."""
-    frames = _get_frames(video_id, 1)
+def chroma_preview(video_id: str, color: str = "#00ff00", tolerance: int = 60,
+                   trim_start: float = 0.0, trim_end: float = 1.0, crop: str = ""):
+    """One keyed frame (middle of the trimmed, cropped clip) as PNG, so the key
+    can be tuned live. Same crop as /api/generate, so both share the frame cache."""
+    try:
+        crop_list = [float(v) for v in crop.split(",")] if crop else None
+    except ValueError:
+        raise HTTPException(400, "crop must be x,y,w,h")
+    c = _check_edit(crop_list, trim_start, trim_end)
+    frames = _trim(_get_frames(video_id, 1, c), trim_start, trim_end)
     keyed = _chroma(frames[len(frames) // 2], color, tolerance)
     data, _ = export.encode(keyed, "png")
     return Response(data, media_type="image/png")
@@ -248,6 +274,9 @@ class GenerateReq(BaseModel):
     chroma_tolerance: int = 60    # 0-100, higher removes more
     pot: int = 0                  # 0 = off, else 256/512/1024/2048/4096
     fps: float = 24.0             # stored in metadata only
+    trim_start: float = 0.0       # keep [trim_start, trim_end) of the clip, as 0..1 fractions
+    trim_end: float = 1.0
+    crop: Optional[List[float]] = None  # [x, y, w, h] as 0..1 fractions; None = center square
 
 
 _MEDIA_TYPES = {
@@ -273,6 +302,7 @@ def generate(req: GenerateReq):
         raise HTTPException(400, f"Unsupported alpha mode: {req.alpha_mode}")
     if req.pot not in export.POT_SIZES:
         raise HTTPException(400, f"Unsupported power-of-two size: {req.pot}")
+    crop = _check_edit(req.crop, req.trim_start, req.trim_end)
 
     src = _videos.get(req.video_id)
     if not src:
@@ -281,7 +311,8 @@ def generate(req: GenerateReq):
     # Resolve "auto" (cell == 0): keep the source's native resolution, sized so
     # the whole sheet fits within 8K. Any explicit value is used as-is.
     info = src["info"]
-    native = min(int(info["width"]), int(info["height"])) or MAX_CELL
+    cw, ch = (crop[2], crop[3]) if crop else (1.0, 1.0)
+    native = int(min(info["width"] * cw, info["height"] * ch)) or MAX_CELL
     cell = core.auto_cell(native, req.cols, req.rows, MAX_SHEET_DIM) if req.cell == 0 else req.cell
 
     if max(req.cols, req.rows) * cell > MAX_SHEET_DIM:
@@ -289,7 +320,7 @@ def generate(req: GenerateReq):
             400, f"Resulting sheet exceeds {MAX_SHEET_DIM}px per edge (8K); "
                  "reduce grid size or cell resolution.")
 
-    frames = _get_frames(req.video_id, cell)
+    frames = _trim(_get_frames(req.video_id, cell, crop), req.trim_start, req.trim_end)
     t0 = time.time()
     if src.get("kind") == "images":
         result = core.make_flipbook_images(

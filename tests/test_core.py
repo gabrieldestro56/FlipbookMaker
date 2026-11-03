@@ -339,3 +339,17 @@ def test_parse_hex_color():
     assert core.parse_hex_color("FF0000") == (0, 0, 255)
     with pytest.raises(ValueError):
         core.parse_hex_color("#12345")
+
+
+# ------------------------------------------------------------------ user crop
+def test_crop_square_takes_user_region():
+    frame = np.zeros((60, 80, 3), np.uint8)
+    frame[0:30, 40:80] = 255  # bright top-right quadrant
+    out = core._crop_square(frame, (0.5, 0.0, 0.5, 0.5))
+    assert out.shape[:2] == (30, 30)
+    assert out.mean() == 255
+
+
+def test_crop_square_none_is_center_square():
+    frame = np.zeros((60, 80, 3), np.uint8)
+    assert core._crop_square(frame, None).shape[:2] == (60, 60)

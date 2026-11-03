@@ -168,6 +168,21 @@
         <video id="video" controls loop muted playsinline></video>
         <img id="sourceImg" class="hidden" alt="source frame" />
         <div class="placeholder" id="videoPlaceholder">No source loaded</div>
+        <div id="cropBox" class="hidden" title="Drag to move"><div id="cropHandle" title="Drag to resize"></div></div>
+      </div>
+      <div id="editBar" class="hidden">
+        <h2>Trim</h2>
+        <div class="trim">
+          <div class="trimtrack"><div class="trimfill" id="trimFill"></div></div>
+          <input type="range" id="trimStart" min="0" max="1000" value="0" aria-label="Trim start" />
+          <input type="range" id="trimEnd" min="0" max="1000" value="1000" aria-label="Trim end" />
+        </div>
+        <div class="trimlabels"><span id="trimStartVal"></span><span id="trimLen"></span><span id="trimEndVal"></span></div>
+        <h2>Crop</h2>
+        <div class="playbar">
+          <label class="check"><input type="checkbox" id="cropOn" /> Crop — drag the box, corner resizes</label>
+          <button id="cropReset" class="ghost">Reset</button>
+        </div>
       </div>
     </section>
 
