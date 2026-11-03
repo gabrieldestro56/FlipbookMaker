@@ -343,6 +343,28 @@ def build_sequence(
     return _sample(frames, n)
 
 
+def chroma_key(img: np.ndarray, threshold: int = 60) -> np.ndarray:
+    """Remove a green screen: return a BGRA copy of a BGR/BGRA uint8 image.
+
+    "Green excess" = G - max(R, B) is brightness-independent, so lit and shadowed
+    parts of the screen key alike. Pixels with excess >= `threshold` go fully
+    transparent, <= threshold/2 stay opaque, with a soft ramp between for edges.
+    Green spill is then clamped (G <= max(R, B)) so edges don't keep a green fringe.
+    Any existing alpha is kept (the result is the min of both).
+    """
+    bgr = img[..., :3].astype(np.int16)
+    b, g, r = bgr[..., 0], bgr[..., 1], bgr[..., 2]
+    rb = np.maximum(r, b)
+    lo = threshold / 2.0
+    keep = 1.0 - np.clip((g - rb - lo) / max(threshold - lo, 1e-6), 0.0, 1.0)
+    alpha = np.clip(keep * 255.0 + 0.5, 0, 255).astype(np.uint8)
+    if img.shape[-1] == 4:
+        alpha = np.minimum(alpha, img[..., 3])
+    out = img[..., :3].copy()
+    out[..., 1] = np.minimum(g, rb).astype(np.uint8)
+    return np.dstack([out, alpha])
+
+
 def compose_sheet(seq: List[np.ndarray], cols: int, rows: int, cell: int) -> np.ndarray:
     """Arrange frames left-to-right, top-to-bottom into one sprite sheet.
 

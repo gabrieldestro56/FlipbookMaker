@@ -248,9 +248,16 @@ $("fps").addEventListener("input", (e) => {
 });
 
 // Premultiply only makes sense with an alpha channel.
-$("alpha").addEventListener("change", (e) => {
-  $("premultiply").disabled = !e.target.checked;
-  if (!e.target.checked) $("premultiply").checked = false;
+function syncAlphaControls() {
+  const on = $("alpha").checked || $("chroma").checked;
+  $("premultiply").disabled = !on;
+  if (!on) $("premultiply").checked = false;
+  $("chromaRow").classList.toggle("hidden", !$("chroma").checked);
+}
+$("alpha").addEventListener("change", syncAlphaControls);
+$("chroma").addEventListener("change", syncAlphaControls);
+$("chromaThreshold").addEventListener("input", (e) => {
+  $("chromaVal").textContent = e.target.value;
 });
 
 // ------------------------------------------------------------------ generate
@@ -275,6 +282,8 @@ $("generateBtn").addEventListener("click", async () => {
       fmt: $("fmt").value,
       alpha_mode: resolveAlphaMode(),
       premultiply: $("premultiply").checked,
+      chroma_key: $("chroma").checked,
+      chroma_threshold: +$("chromaThreshold").value,
       pot: +$("pot").value,
       fps: state.fps,
     };

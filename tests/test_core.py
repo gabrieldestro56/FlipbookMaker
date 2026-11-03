@@ -291,3 +291,24 @@ def test_make_flipbook_images_from_frames_and_loop():
                                     loop=True, blend_frames=1, frames=frames)
     assert res.sheet_bgr.shape == (32, 32, 4)
     assert res.frame_count == 4
+
+
+# ----------------------------------------------------------------- chroma key
+def test_chroma_key_removes_green_keeps_subject():
+    img = np.zeros((2, 3, 3), np.uint8)
+    img[:, 0] = (60, 180, 70)    # BGR: typical lit green screen
+    img[:, 1] = (120, 150, 200)  # BGR: skin tone
+    img[:, 2] = (50, 130, 60)    # edge: green excess 70, between threshold/2 and threshold
+    out = core.chroma_key(img, threshold=80)
+    assert out.shape == (2, 3, 4)
+    assert (out[:, 0, 3] == 0).all()
+    assert (out[:, 1, 3] == 255).all()
+    assert 0 < out[0, 2, 3] < 255
+    assert np.array_equal(out[:, 1, :3], img[:, 1])  # subject color untouched
+    assert (out[:, 2, 1] <= out[:, 2, 2]).all()      # spill clamped to max(R, B)
+
+
+def test_chroma_key_keeps_existing_alpha():
+    img = np.zeros((1, 1, 4), np.uint8)
+    img[0, 0] = (120, 150, 200, 40)  # opaque-colored but already mostly transparent
+    assert core.chroma_key(img)[0, 0, 3] == 40

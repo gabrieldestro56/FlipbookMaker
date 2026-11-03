@@ -120,6 +120,28 @@ def test_generate_alpha_preview_is_rgba(loaded_video):
     assert img.mode == "RGBA"
 
 
+def test_generate_chroma_key_is_rgba(loaded_video):
+    import io
+    from PIL import Image
+    r = client.post("/api/generate", json={
+        "video_id": loaded_video, "cols": 4, "rows": 4, "cell": 32,
+        "chroma_key": True, "chroma_threshold": 60, "pot": 256,
+    })
+    assert r.status_code == 200
+    d = r.json()
+    assert d["chroma_key"] is True and d["alpha_mode"] == "source"
+    img = Image.open(io.BytesIO(client.get(d["preview_url"]).content))
+    assert img.mode == "RGBA" and img.size == (256, 256)
+
+
+def test_generate_bad_chroma_threshold(loaded_video):
+    r = client.post("/api/generate", json={
+        "video_id": loaded_video, "cols": 4, "rows": 4, "chroma_key": True,
+        "chroma_threshold": 0,
+    })
+    assert r.status_code == 400
+
+
 @pytest.mark.parametrize("fmt,sig", [
     ("png", b"\x89PNG"), ("tga", None), ("webp", b"RIFF"),
     ("tiff", None), ("jpg", b"\xff\xd8"), ("exr", b"\x76\x2f\x31\x01"),

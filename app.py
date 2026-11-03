@@ -224,6 +224,8 @@ class GenerateReq(BaseModel):
     fmt: str = "png"              # png | tga | webp | tiff | jpg | exr
     alpha_mode: str = "none"      # "none" | "luminance"
     premultiply: bool = False
+    chroma_key: bool = False      # remove a green screen (overrides alpha_mode)
+    chroma_threshold: int = 60    # green excess (G - max(R,B)) that is fully keyed out
     pot: int = 0                  # 0 = off, else 256/512/1024/2048/4096
     fps: float = 24.0             # stored in metadata only
 
@@ -251,6 +253,8 @@ def generate(req: GenerateReq):
         raise HTTPException(400, f"Unsupported alpha mode: {req.alpha_mode}")
     if req.pot not in export.POT_SIZES:
         raise HTTPException(400, f"Unsupported power-of-two size: {req.pot}")
+    if not 1 <= req.chroma_threshold <= 255:
+        raise HTTPException(400, "chroma_threshold must be between 1 and 255")
 
     src = _videos.get(req.video_id)
     if not src:
@@ -284,19 +288,25 @@ def generate(req: GenerateReq):
             frames=frames,
         )
 
+    sheet = result.sheet_bgr
+    alpha_mode = req.alpha_mode.lower()
+    if req.chroma_key:
+        sheet = core.chroma_key(sheet, req.chroma_threshold)
+        alpha_mode = "source"
+
     stem = f"flipbook_{req.cols}x{req.rows}_{uuid.uuid4().hex[:6]}"
 
     # Always emit a straight-alpha PNG the browser can display (preview/playback).
-    preview_bytes, _ = export.encode(result.sheet_bgr, "png",
-                                     alpha_mode=req.alpha_mode,
+    preview_bytes, _ = export.encode(sheet, "png",
+                                     alpha_mode=alpha_mode,
                                      premultiply=False, pot=req.pot)
     preview_name = stem + "_preview.png"
     with open(os.path.join(OUTPUT_DIR, preview_name), "wb") as f:
         f.write(preview_bytes)
 
     # The chosen export format (PNG by default), honoring premultiply.
-    dl_bytes, ext = export.encode(result.sheet_bgr, req.fmt,
-                                  alpha_mode=req.alpha_mode,
+    dl_bytes, ext = export.encode(sheet, req.fmt,
+                                  alpha_mode=alpha_mode,
                                   premultiply=req.premultiply, pot=req.pot)
     download_name = stem + ext
     with open(os.path.join(OUTPUT_DIR, download_name), "wb") as f:
@@ -319,8 +329,9 @@ def generate(req: GenerateReq):
         "cell": result.cell,
         "sheet_width": out_w,
         "sheet_height": out_h,
-        "alpha_mode": req.alpha_mode.lower(),
-        "premultiplied_alpha": bool(req.premultiply and req.alpha_mode != "none"),
+        "alpha_mode": alpha_mode,
+        "chroma_key": req.chroma_key,
+        "premultiplied_alpha": bool(req.premultiply and alpha_mode != "none"),
         "power_of_two": req.pot,
         "source_kind": src.get("kind", "video"),
         "source": src.get("name") or os.path.basename(src["path"]),
