@@ -287,6 +287,10 @@ function resetEdit() {
 
 function updateTrimLabels() {
   const a = +$("trimStart").value, b = +$("trimEnd").value;
+  // Thumb centers travel from 9px to (width - 9px) for the 18px balls in style.css.
+  const [fs, fe] = trimFrac();
+  $("trimFill").style.left = `calc(${fs} * (100% - 18px) + 9px)`;
+  $("trimFill").style.right = `calc(${1 - fe} * (100% - 18px) + 9px)`;
   if (state.srcKind === "images") {
     $("trimStartVal").textContent = `frame ${a}`;
     $("trimEndVal").textContent = `frame ${b - 1}`;
