@@ -114,10 +114,21 @@
         <input type="checkbox" id="chroma" />
         Remove green screen
       </label>
-      <label id="chromaRow" class="hidden">Key threshold <span class="val" id="chromaVal">60</span>
-        <input type="range" id="chromaThreshold" min="1" max="255" value="60" />
-      </label>
-      <div class="hint subtle">Lower threshold removes more green. Overrides the alpha option above.</div>
+      <div id="chromaRow" class="hidden">
+        <label>Screen color</label>
+        <div class="row">
+          <input type="color" id="chromaColor" value="#00ff00" />
+          <button type="button" id="eyedropBtn" class="ghost hidden">Pick from screen</button>
+        </div>
+        <label>Tolerance <span class="val" id="chromaVal">60</span>
+          <input type="range" id="chromaTolerance" min="0" max="100" value="60" />
+        </label>
+        <div class="hint subtle">Higher removes more. Overrides the alpha option above.</div>
+        <div class="sheetwrap chroma-preview">
+          <img id="chromaPreview" class="hidden" alt="keyed frame preview" />
+          <div class="placeholder" id="chromaPlaceholder">Load a source to preview</div>
+        </div>
+      </div>
       <label class="check">
         <input type="checkbox" id="premultiply" disabled />
         Premultiply alpha

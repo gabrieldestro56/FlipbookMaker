@@ -343,26 +343,54 @@ def build_sequence(
     return _sample(frames, n)
 
 
-def chroma_key(img: np.ndarray, threshold: int = 60) -> np.ndarray:
-    """Remove a green screen: return a BGRA copy of a BGR/BGRA uint8 image.
+def parse_hex_color(color: str) -> tuple:
+    """'#00ff00' / '00FF00' -> (B, G, R) ints. Raises ValueError if malformed."""
+    s = color.strip().lstrip("#")
+    if not re.fullmatch(r"[0-9a-fA-F]{6}", s):
+        raise ValueError(f"Invalid color: {color!r} (expected #RRGGBB)")
+    r, g, b = (int(s[i:i + 2], 16) for i in (0, 2, 4))
+    return b, g, r
 
-    "Green excess" = G - max(R, B) is brightness-independent, so lit and shadowed
-    parts of the screen key alike. Pixels with excess >= `threshold` go fully
-    transparent, <= threshold/2 stay opaque, with a soft ramp between for edges.
-    Green spill is then clamped (G <= max(R, B)) so edges don't keep a green fringe.
+
+def chroma_key(img: np.ndarray, key_bgr=(0, 255, 0), tolerance: int = 60) -> np.ndarray:
+    """Remove a colored screen: return a BGRA copy of a BGR/BGRA uint8 image.
+
+    Each pixel's chroma (color minus its own gray level) is projected onto the
+    key's chroma direction; drift off that hue is subtracted, so only pixels of
+    the key's hue score high. The score is relative to the key and to the pixel's
+    brightness (1.0 = as saturated as the key), so shadowed screen still keys.
+    `tolerance` (0-100): higher removes more. Scores >= 1 - tolerance/100 go fully
+    transparent, half that stays opaque, with a soft ramp between for edges.
+    The same score drives despill, pulling leftover key tint out of the edges.
     Any existing alpha is kept (the result is the min of both).
     """
-    bgr = img[..., :3].astype(np.int16)
-    b, g, r = bgr[..., 0], bgr[..., 1], bgr[..., 2]
-    rb = np.maximum(r, b)
-    lo = threshold / 2.0
-    keep = 1.0 - np.clip((g - rb - lo) / max(threshold - lo, 1e-6), 0.0, 1.0)
-    alpha = np.clip(keep * 255.0 + 0.5, 0, 255).astype(np.uint8)
+    key = np.asarray(key_bgr, np.float32)
+    kc = key - key.mean()
+    norm = float(np.linalg.norm(kc))
+    if norm < 1.0:
+        raise ValueError("Key color must have a hue (not black, white or gray).")
+    u = kc / norm
+    kmax = float(key.max())
+    hi =max(1.0 - tolerance / 100.0, 1e-3)
+    lo = hi / 2.0
+
+    out = np.empty(img.shape[:2] + (4,), np.uint8)
+    step = 256  # row strips keep float temporaries small on 8K sheets
+    for y in range(0, img.shape[0], step):
+        px = img[y:y + step, :, :3].astype(np.float32)
+        c = px - px.mean(axis=2, keepdims=True)
+        proj = c @ u
+        score = proj - np.linalg.norm(c - proj[..., None] * u, axis=2)
+        # Relative to brightness so shadowed screen keys like lit screen; the 0.25
+        # floor stops near-black noise (hair, shade) from scoring as key color.
+        bright = np.maximum(px.max(axis=2) / kmax, 0.25)
+        keep = 1.0 - np.clip((score / (norm * bright) - lo) / (hi - lo), 0.0, 1.0)
+        out[y:y + step, :, 3] = (keep * 255.0 + 0.5).astype(np.uint8)
+        spill = np.maximum(score, 0.0)[..., None] * u
+        out[y:y + step, :, :3] = np.clip(px - spill + 0.5, 0, 255).astype(np.uint8)
     if img.shape[-1] == 4:
-        alpha = np.minimum(alpha, img[..., 3])
-    out = img[..., :3].copy()
-    out[..., 1] = np.minimum(g, rb).astype(np.uint8)
-    return np.dstack([out, alpha])
+        out[..., 3] = np.minimum(out[..., 3], img[..., 3])
+    return out
 
 
 def compose_sheet(seq: List[np.ndarray], cols: int, rows: int, cell: int) -> np.ndarray:

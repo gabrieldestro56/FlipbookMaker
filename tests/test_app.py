@@ -125,21 +125,37 @@ def test_generate_chroma_key_is_rgba(loaded_video):
     from PIL import Image
     r = client.post("/api/generate", json={
         "video_id": loaded_video, "cols": 4, "rows": 4, "cell": 32,
-        "chroma_key": True, "chroma_threshold": 60, "pot": 256,
+        "chroma_key": True, "chroma_color": "#3cb446", "chroma_tolerance": 70, "pot": 256,
     })
     assert r.status_code == 200
     d = r.json()
     assert d["chroma_key"] is True and d["alpha_mode"] == "source"
+    assert d["chroma_color"] == "#3cb446"
     img = Image.open(io.BytesIO(client.get(d["preview_url"]).content))
     assert img.mode == "RGBA" and img.size == (256, 256)
 
 
-def test_generate_bad_chroma_threshold(loaded_video):
+@pytest.mark.parametrize("extra", [
+    {"chroma_tolerance": 101}, {"chroma_color": "green"}, {"chroma_color": "#808080"},
+])
+def test_generate_bad_chroma(loaded_video, extra):
     r = client.post("/api/generate", json={
-        "video_id": loaded_video, "cols": 4, "rows": 4, "chroma_key": True,
-        "chroma_threshold": 0,
+        "video_id": loaded_video, "cols": 4, "rows": 4, "chroma_key": True, **extra,
     })
     assert r.status_code == 400
+
+
+def test_chroma_preview_png(loaded_video):
+    import io
+    from PIL import Image
+    r = client.get(f"/api/chroma-preview/{loaded_video}", params={"color": "#00ff00", "tolerance": 50})
+    assert r.status_code == 200 and r.headers["content-type"] == "image/png"
+    assert Image.open(io.BytesIO(r.content)).mode == "RGBA"
+
+
+def test_chroma_preview_errors(loaded_video):
+    assert client.get("/api/chroma-preview/nope").status_code == 404
+    assert client.get(f"/api/chroma-preview/{loaded_video}", params={"color": "zz"}).status_code == 400
 
 
 @pytest.mark.parametrize("fmt,sig", [

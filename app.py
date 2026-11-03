@@ -22,7 +22,7 @@ os.environ.setdefault("OPENCV_IO_ENABLE_OPENEXR", "1")
 
 import numpy as np
 from fastapi import FastAPI, File, HTTPException, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -213,6 +213,25 @@ def _get_frames(video_id: str, min_cell: int) -> List[np.ndarray]:
     return _frame_cache[video_id]["frames"]
 
 
+def _chroma(img: np.ndarray, color: str, tolerance: int) -> np.ndarray:
+    """Key out `color`, turning bad user input into a 400."""
+    if not 0 <= tolerance <= 100:
+        raise HTTPException(400, "chroma_tolerance must be between 0 and 100")
+    try:
+        return core.chroma_key(img, core.parse_hex_color(color), tolerance)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get("/api/chroma-preview/{video_id}")
+def chroma_preview(video_id: str, color: str = "#00ff00", tolerance: int = 60):
+    """One keyed frame (the clip's middle) as PNG, so the key can be tuned live."""
+    frames = _get_frames(video_id, 1)
+    keyed = _chroma(frames[len(frames) // 2], color, tolerance)
+    data, _ = export.encode(keyed, "png")
+    return Response(data, media_type="image/png")
+
+
 class GenerateReq(BaseModel):
     video_id: str
     cols: int = 10
@@ -225,7 +244,8 @@ class GenerateReq(BaseModel):
     alpha_mode: str = "none"      # "none" | "luminance"
     premultiply: bool = False
     chroma_key: bool = False      # remove a green screen (overrides alpha_mode)
-    chroma_threshold: int = 60    # green excess (G - max(R,B)) that is fully keyed out
+    chroma_color: str = "#00ff00" # screen color to key out
+    chroma_tolerance: int = 60    # 0-100, higher removes more
     pot: int = 0                  # 0 = off, else 256/512/1024/2048/4096
     fps: float = 24.0             # stored in metadata only
 
@@ -253,8 +273,6 @@ def generate(req: GenerateReq):
         raise HTTPException(400, f"Unsupported alpha mode: {req.alpha_mode}")
     if req.pot not in export.POT_SIZES:
         raise HTTPException(400, f"Unsupported power-of-two size: {req.pot}")
-    if not 1 <= req.chroma_threshold <= 255:
-        raise HTTPException(400, "chroma_threshold must be between 1 and 255")
 
     src = _videos.get(req.video_id)
     if not src:
@@ -291,7 +309,7 @@ def generate(req: GenerateReq):
     sheet = result.sheet_bgr
     alpha_mode = req.alpha_mode.lower()
     if req.chroma_key:
-        sheet = core.chroma_key(sheet, req.chroma_threshold)
+        sheet = _chroma(sheet, req.chroma_color, req.chroma_tolerance)
         alpha_mode = "source"
 
     stem = f"flipbook_{req.cols}x{req.rows}_{uuid.uuid4().hex[:6]}"
@@ -331,6 +349,8 @@ def generate(req: GenerateReq):
         "sheet_height": out_h,
         "alpha_mode": alpha_mode,
         "chroma_key": req.chroma_key,
+        **({"chroma_color": req.chroma_color, "chroma_tolerance": req.chroma_tolerance}
+           if req.chroma_key else {}),
         "premultiplied_alpha": bool(req.premultiply and alpha_mode != "none"),
         "power_of_two": req.pot,
         "source_kind": src.get("kind", "video"),

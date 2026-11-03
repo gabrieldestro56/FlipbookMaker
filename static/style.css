@@ -260,3 +260,7 @@ button:hover { border-color: var(--accent); }
 @media (max-width: 1100px) {
   main { grid-template-columns: 1fr; }
 }
+
+.row input[type="color"] { flex: 0 0 52px; height: 36px; padding: 2px; cursor: pointer; }
+.chroma-preview { margin-top: 8px; min-height: 80px; }
+.chroma-preview img { image-rendering: auto; }

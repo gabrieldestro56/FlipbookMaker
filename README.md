@@ -100,7 +100,7 @@ Use the **4 · Export** panel:
 | --- | --- |
 | **Format** | `PNG` is recommended (lossless + alpha). `TGA`/`TIFF` are common engine formats, `WebP` is small, `EXR` is 32-bit HDR, `JPG` is lossy with no alpha. |
 | **Alpha from luminance** | Builds an alpha channel from brightness (Rec.709). Perfect for additive VFX (fire, smoke, sparks, explosions) captured on black. |
-| **Remove green screen** | Keys out green (alpha from how much green exceeds red/blue) and removes green spill from edges. Lower the *Key threshold* to remove more green. Overrides the alpha option. |
+| **Remove green screen** | Keys out the *Screen color* (pick it, or use *Pick from screen* in Chrome/Edge to sample the video) and removes its spill from edges. Raise *Tolerance* to remove more. A live preview shows one keyed frame. Works for blue screens too. Overrides the alpha option. |
 | **Premultiply alpha** | Multiplies color by alpha — the form most engines/Niagara expect. Enabled once alpha is on. |
 | **Power-of-two** | Resizes the final sheet to a POT square. Cell UVs stay valid because engines divide the texture by rows × columns. |
 

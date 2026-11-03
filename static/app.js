@@ -72,6 +72,7 @@ async function registerResponse(res) {
   }
 
   updateSheetHint();
+  refreshChromaPreview();
   $("generateBtn").disabled = false;
   setStatus("Video loaded — set your grid and generate", "ok");
 }
@@ -180,6 +181,7 @@ $("loadFolderBtn").addEventListener("click", async () => {
       `suggested grid ${data.suggest_cols}×${data.suggest_rows}`;
 
     applyGrid(data.suggest_cols, data.suggest_rows);
+    refreshChromaPreview();
 
     $("generateBtn").disabled = false;
     setStatus(
@@ -255,10 +257,52 @@ function syncAlphaControls() {
   $("chromaRow").classList.toggle("hidden", !$("chroma").checked);
 }
 $("alpha").addEventListener("change", syncAlphaControls);
-$("chroma").addEventListener("change", syncAlphaControls);
-$("chromaThreshold").addEventListener("input", (e) => {
+$("chroma").addEventListener("change", () => { syncAlphaControls(); refreshChromaPreview(); });
+$("chromaTolerance").addEventListener("input", (e) => {
   $("chromaVal").textContent = e.target.value;
+  refreshChromaPreview();
 });
+$("chromaColor").addEventListener("input", refreshChromaPreview);
+
+// Browser eyedropper (Chrome/Edge): sample the screen color straight off the source video.
+if ("EyeDropper" in window) {
+  $("eyedropBtn").classList.remove("hidden");
+  $("eyedropBtn").addEventListener("click", async () => {
+    try {
+      $("chromaColor").value = (await new EyeDropper().open()).sRGBHex;
+      refreshChromaPreview();
+    } catch { /* user pressed Esc */ }
+  });
+}
+
+// One keyed frame from the server, debounced while dragging the slider.
+let chromaTimer = 0, chromaSeq = 0;
+function refreshChromaPreview() {
+  clearTimeout(chromaTimer);
+  if (!$("chroma").checked || !state.videoId) return;
+  chromaTimer = setTimeout(async () => {
+    const seq = ++chromaSeq;
+    const ph = $("chromaPlaceholder");
+    const q = new URLSearchParams({
+      color: $("chromaColor").value, tolerance: $("chromaTolerance").value });
+    try {
+      const res = await fetch(`/api/chroma-preview/${state.videoId}?${q}`);
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || res.statusText);
+      const url = URL.createObjectURL(await res.blob());
+      if (seq !== chromaSeq) return URL.revokeObjectURL(url);  // a newer request won
+      const img = $("chromaPreview");
+      if (img.src.startsWith("blob:")) URL.revokeObjectURL(img.src);
+      img.src = url;
+      img.classList.remove("hidden");
+      ph.classList.add("hidden");
+    } catch (err) {
+      if (seq !== chromaSeq) return;
+      $("chromaPreview").classList.add("hidden");
+      ph.textContent = "Preview failed: " + err.message;
+      ph.classList.remove("hidden");
+    }
+  }, 150);
+}
 
 // ------------------------------------------------------------------ generate
 function resolveAlphaMode() {
@@ -283,7 +327,8 @@ $("generateBtn").addEventListener("click", async () => {
       alpha_mode: resolveAlphaMode(),
       premultiply: $("premultiply").checked,
       chroma_key: $("chroma").checked,
-      chroma_threshold: +$("chromaThreshold").value,
+      chroma_color: $("chromaColor").value,
+      chroma_tolerance: +$("chromaTolerance").value,
       pot: +$("pot").value,
       fps: state.fps,
     };

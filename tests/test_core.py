@@ -295,20 +295,47 @@ def test_make_flipbook_images_from_frames_and_loop():
 
 # ----------------------------------------------------------------- chroma key
 def test_chroma_key_removes_green_keeps_subject():
-    img = np.zeros((2, 3, 3), np.uint8)
-    img[:, 0] = (60, 180, 70)    # BGR: typical lit green screen
-    img[:, 1] = (120, 150, 200)  # BGR: skin tone
-    img[:, 2] = (50, 130, 60)    # edge: green excess 70, between threshold/2 and threshold
-    out = core.chroma_key(img, threshold=80)
-    assert out.shape == (2, 3, 4)
-    assert (out[:, 0, 3] == 0).all()
-    assert (out[:, 1, 3] == 255).all()
-    assert 0 < out[0, 2, 3] < 255
-    assert np.array_equal(out[:, 1, :3], img[:, 1])  # subject color untouched
-    assert (out[:, 2, 1] <= out[:, 2, 2]).all()      # spill clamped to max(R, B)
+    img = np.zeros((1, 5, 3), np.uint8)
+    img[0, 0] = (60, 180, 70)    # BGR: typical lit green screen
+    img[0, 1] = (30, 90, 35)     # same screen in shadow
+    img[0, 2] = (120, 150, 200)  # skin tone
+    img[0, 3] = (0, 200, 200)    # yellow: has green, but not the key's hue
+    img[0, 4] = (75, 172, 102)   # edge: 75% screen, 25% skin
+    out = core.chroma_key(img, (0, 255, 0), tolerance=60)
+    a = out[0, :, 3]
+    assert out.shape == (1, 5, 4)
+    assert a[0] == 0 and a[1] == 0
+    assert a[2] == 255 and a[3] == 255
+    assert 0 < a[4] < 255
+    assert np.abs(out[0, 2, :3].astype(int) - img[0, 2]).max() <= 1  # subject untouched
+    edge = out[0, 4, :3].astype(int)
+    assert edge[1] - max(edge[0], edge[2]) < 172 - 102  # green spill reduced
+
+
+def test_chroma_key_any_color_and_tolerance():
+    blue = np.zeros((1, 1, 3), np.uint8)
+    blue[0, 0] = (200, 60, 40)  # BGR blue screen
+    assert core.chroma_key(blue, (255, 0, 0), 60)[0, 0, 3] == 0
+    assert core.chroma_key(blue, (0, 255, 0), 60)[0, 0, 3] == 255  # wrong key keeps it
+    pale = np.zeros((1, 1, 3), np.uint8)
+    pale[0, 0] = (110, 150, 110)  # washed-out green: score ~0.27 of pure green
+    assert core.chroma_key(pale, (0, 255, 0), 0)[0, 0, 3] == 255
+    assert core.chroma_key(pale, (0, 255, 0), 90)[0, 0, 3] == 0
 
 
 def test_chroma_key_keeps_existing_alpha():
     img = np.zeros((1, 1, 4), np.uint8)
-    img[0, 0] = (120, 150, 200, 40)  # opaque-colored but already mostly transparent
+    img[0, 0] = (120, 150, 200, 40)
     assert core.chroma_key(img)[0, 0, 3] == 40
+
+
+def test_chroma_key_rejects_gray_key():
+    with pytest.raises(ValueError):
+        core.chroma_key(np.zeros((2, 2, 3), np.uint8), (128, 128, 128))
+
+
+def test_parse_hex_color():
+    assert core.parse_hex_color("#00ff80") == (128, 255, 0)
+    assert core.parse_hex_color("FF0000") == (0, 0, 255)
+    with pytest.raises(ValueError):
+        core.parse_hex_color("#12345")
